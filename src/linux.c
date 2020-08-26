@@ -11,45 +11,21 @@
 
 static
 efi_status
-load_kernel(efi_ch16 *filename, void **kernel_base, efi_size *kernel_size)
+alloc_aligned(efi_size alingment, efi_size bytes, void **buffer)
 {
-	efi_status		status;
-	efi_file_protocol	*kernel_file;
-	efi_file_info		*kernel_info;
+	efi_status status;
+	efi_size off;
 
-	/* Open kernel file */
-	status = self_root_dir->open(
-		self_root_dir,
-		&kernel_file,
-		filename,
-		EFI_FILE_MODE_READ,
-		0);
-	if (EFI_ERROR(status))
-		return status;
-
-	/* Get kernel size */
-	status = get_file_info(kernel_file, &kernel_info);
-	if (EFI_ERROR(status))
-		goto done;
-	*kernel_size = kernel_info->file_size;
-	free(kernel_info);
-
-	/* Allocate memory */
 	status = bs->allocate_pages(
 		allocate_any_pages,
 		efi_loader_code,
-		PAGE_COUNT(*kernel_size),
-		(efi_physical_address *) kernel_base);
-	if (EFI_ERROR(status))
-		goto done;
+		PAGE_COUNT(alingment + bytes),
+		(efi_physical_address *) buffer);
 
-	/* Load kernel */
-	status = kernel_file->read(
-		kernel_file,
-		kernel_size,
-		*kernel_base);
-done:
-	kernel_file->close(kernel_file);
+	if (EFI_ERROR(status))
+		return status;
+
+	*buffer += alingment - (efi_size) *buffer % alingment;
 	return status;
 }
 
@@ -99,14 +75,16 @@ retry:
 	}
 
 	if (EFI_ERROR(status)) /* Failed to get UEFI memory map */
-		goto end;
+		return status;
 
 	/* Allocate an E820 memory map with the same number of entries */
 	e820_cur = boot_params->e820_table;
 
-	if (mmap_size / desc_size > E820_MAX_ENTRIES_ZEROPAGE)
-		abort(L"Sorry, can't boot on your crap firmware,"
-		" memory map too big for Linux!\r\n", EFI_UNSUPPORTED);
+	/* Make sure this firmware's memory map is compatible with the kernel */
+	if (mmap_size / desc_size > E820_MAX_ENTRIES_ZEROPAGE) {
+		free(mmap);
+		return EFI_UNSUPPORTED;
+	}
 
 	/* Convert UEFI memory map to E820 */
 	for (mmap_ent = mmap; (void *) mmap_ent < mmap + mmap_size;
@@ -138,13 +116,150 @@ retry:
 		++e820_cur;
 	}
 
-end:
 	/* NOTE: the UEFI mmap cannot be freed otherwise UEFI shits itself */
 	return status;
 }
 
 efi_status
-boot_linux(efi_ch16 *filename, efi_ch16 *cmdline)
+boot_linux(efi_ch16 *filename, char *cmdline)
 {
+	efi_status		status;
+	efi_size		len;
+	efi_file_protocol	*kernel_file;
+	struct boot_params	*boot_params;
+	efi_size		cmdline_size;
+	void			*cmdline_base;
+	void			*kernel_base;
+	efi_size		map_key;
 
+	/* Open kernel */
+	status = self_root_dir->open(
+		self_root_dir,
+		&kernel_file,
+		filename,
+		EFI_FILE_MODE_READ,
+		0);
+
+	if (EFI_ERROR(status))
+		goto err;
+
+	/* Allocate boot params */
+	status = bs->allocate_pages(
+		allocate_any_pages,
+		efi_loader_code,
+		PAGE_COUNT(sizeof(struct boot_params)),
+		(efi_physical_address *) &boot_params);
+
+	if (EFI_ERROR(status))
+		goto err_close;
+
+	/* Zero boot params */
+	bzero(boot_params, sizeof(struct boot_params));
+
+	/* Read setup header */
+	status = kernel_file->set_position(kernel_file, 0x1f1);
+
+	if (EFI_ERROR(status))
+		goto err_free_params;
+
+	len = sizeof(struct setup_header);
+	status = kernel_file->read(kernel_file, &len, &boot_params->hdr);
+
+	if (EFI_ERROR(status))
+		goto err_free_params;
+
+	if (len != sizeof(struct setup_header))
+		goto err_badkernel;
+
+	/* Enforce all assumptions made about the kernel image */
+	if (boot_params->hdr.boot_flag != 0xaa55 ||
+			boot_params->hdr.header != 0x53726448 ||
+			boot_params->hdr.version < 0x02c ||
+			!boot_params->hdr.relocatable_kernel ||
+			!(boot_params->hdr.xloadflags & XLF_KERNEL_64) ||
+			!(boot_params->hdr.xloadflags
+				& XLF_CAN_BE_LOADED_ABOVE_4G))
+		goto err_badkernel;
+
+	/* Allocate buffer for the kernel image */
+	print(L"Kernel alingment: %p\n", boot_params->hdr.kernel_alignment);
+
+	status = alloc_aligned(
+		boot_params->hdr.kernel_alignment,
+		boot_params->hdr.init_size,
+		&kernel_base);
+
+	if (EFI_ERROR(status))
+		goto err_free_params;
+
+	print(L"Kernel will be loaded at: %p\n", kernel_base);
+
+	/* Load kernel */
+	status = kernel_file->set_position(
+		kernel_file,
+		boot_params->hdr.setup_sects * 512);
+
+	if (EFI_ERROR(status))
+		goto err_free_kernel;
+
+	len = boot_params->hdr.init_size;
+	status = kernel_file->read(kernel_file, &len, kernel_base);
+
+	if (EFI_ERROR(status))
+		goto err_free_kernel;
+
+	/* Kernel command line */
+	cmdline_size = ascii_strlen(cmdline) + 1;
+	status = bs->allocate_pages(
+		allocate_any_pages,
+		efi_loader_code,
+		PAGE_COUNT(cmdline_size),
+		(efi_physical_address *) &cmdline_base);
+
+	if (EFI_ERROR(status))
+		goto err_free_kernel;
+
+	memcpy(cmdline_base, cmdline, cmdline_size);
+
+	/* Fill boot parameters */
+	boot_params->hdr.type_of_loader = 0xff;
+	boot_params->hdr.loadflags &= ~(1 << 5); /* Make sure the kernel is *not* quiet */
+	boot_params->hdr.cmdline_size = cmdline_size;
+	boot_params->hdr.cmd_line_ptr = (efi_u32) (efi_u64) cmdline_base;
+	boot_params->ext_cmd_line_ptr = (efi_u32) ((efi_u64) cmdline_base >> 32);
+
+	status = convert_mmap(boot_params, &map_key);
+
+	if (EFI_ERROR(status))
+		goto err_free_cmdline;
+
+	/* Jump to kernel */
+	status = bs->exit_boot_services(self_image_handle, map_key);
+
+	if (EFI_ERROR(status))
+		goto err_free_cmdline;
+
+	asm volatile (
+		"movq %0, %%rax\n"
+		"movq %1, %%rsi\n"
+		"jmp *%%rax" :: "r" (kernel_base + 0x200), "r" (boot_params));
+
+	for (;;)
+		;
+
+err_badkernel:
+	status = EFI_INVALID_PARAMETER;
+err_free_cmdline:
+	bs->free_pages((efi_physical_address) cmdline_base,
+		PAGE_COUNT(cmdline_size));
+err_free_kernel:
+	bs->free_pages((efi_physical_address) kernel_base,
+		PAGE_COUNT(boot_params->hdr.init_size));
+err_free_params:
+	bs->free_pages((efi_physical_address) boot_params,
+		PAGE_COUNT(sizeof(*boot_params)));
+err_close:
+	kernel_file->close(kernel_file);
+err:
+	return status;
 }
