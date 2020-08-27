@@ -125,6 +125,90 @@ retry:
 }
 
 static
+efi_status
+setup_video(struct boot_params *boot_params)
+{
+	efi_status	status;
+	efi_size	handle_cnt;
+	efi_handle	*handles;
+
+	efi_graphics_output_protocol *gop;
+	efi_graphics_output_mode_information *mode_info;
+
+	/* Locate all GOP hanldes */
+	handles = NULL;
+	status = locate_all_handles(
+		&(efi_guid) EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID,
+		&handle_cnt,
+		&handles);
+
+	if (EFI_ERROR(status))
+		goto end;
+
+	if (!handle_cnt) {
+		status = EFI_UNSUPPORTED;
+		goto end;
+	}
+
+	/* We give the first framebuffer to Linux */
+	status = bs->handle_protocol(
+		handles[0],
+		&(efi_guid) EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID,
+		(void **) &gop);
+
+	if (EFI_ERROR(status))
+		goto end;
+
+	mode_info = gop->mode->info;
+	switch (mode_info->pixel_format) {
+	case pixel_red_green_blue_reserved_8_bit_per_color:
+		boot_params->screen_info.lfb_depth = 32;
+		boot_params->screen_info.red_size = 8;
+		boot_params->screen_info.red_pos = 0;
+		boot_params->screen_info.green_size = 8;
+		boot_params->screen_info.green_pos = 8;
+		boot_params->screen_info.blue_size = 8;
+		boot_params->screen_info.blue_pos = 16;
+		boot_params->screen_info.rsvd_size = 8;
+		boot_params->screen_info.rsvd_pos = 24;
+		boot_params->screen_info.lfb_linelength =
+			mode_info->pixels_per_scan_line * 4;
+		break;
+	case pixel_blue_green_red_reserved_8_bit_per_color:
+		boot_params->screen_info.lfb_depth = 32;
+		boot_params->screen_info.red_size = 8;
+		boot_params->screen_info.red_pos = 16;
+		boot_params->screen_info.green_size = 8;
+		boot_params->screen_info.green_pos = 8;
+		boot_params->screen_info.blue_size = 8;
+		boot_params->screen_info.blue_pos = 0;
+		boot_params->screen_info.rsvd_size = 8;
+		boot_params->screen_info.rsvd_pos = 24;
+		boot_params->screen_info.lfb_linelength =
+			mode_info->pixels_per_scan_line * 4;
+		break;
+	default: /* TODO: add more pixel formats */
+		status = EFI_UNSUPPORTED;
+		goto end;
+	}
+
+	boot_params->screen_info.orig_video_isVGA = 0x70; /* EFI framebuffer */
+	boot_params->screen_info.lfb_base =
+		(efi_u32) (efi_u64) gop->mode->frame_buffer_base;
+	boot_params->screen_info.ext_lfb_base =
+		(efi_u32) ((efi_u64) gop->mode->frame_buffer_base >> 32);
+	boot_params->screen_info.lfb_size = gop->mode->frame_buffer_size;
+	boot_params->screen_info.lfb_width = mode_info->horizontal_resolution;
+	boot_params->screen_info.lfb_height = mode_info->vertical_resolution;
+	boot_params->screen_info.pages = 1;
+
+end:
+	if (handles)
+		free(handles);
+	return status;
+}
+
+static
 efi_u64
 gdt[] = {
 	0,
@@ -267,6 +351,11 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 	boot_params->hdr.cmdline_size = cmdline_size;
 	boot_params->hdr.cmd_line_ptr = (efi_u32) (efi_u64) cmdline_base;
 	boot_params->ext_cmd_line_ptr = (efi_u32) ((efi_u64) cmdline_base >> 32);
+
+	status = setup_video(boot_params);
+
+	if (EFI_ERROR(status))
+		print(L"WARN: graphics setup failed, continuing...\n");
 
 	status = convert_mmap(boot_params, &map_key);
 
