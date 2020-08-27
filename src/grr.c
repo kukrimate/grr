@@ -16,6 +16,6 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 
 	init_util(image_handle, system_table);
 	status = boot_linux(L"\\efi\\grr\\vmlinuz-4.19.0-10-amd64",
-		"earlyprintk=serial,ttyS0,38400");
+		"earlyprintk=serial,ttyS0,38400,keep");
 	abort(L"Failed to boot Linux!\r\n", status);
 }

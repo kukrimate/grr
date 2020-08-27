@@ -1,6 +1,6 @@
 include ../tools/Makefile.efi
 
-APP := efi/grr/grr.efi
+APP := hdd/efi/grr/grr.efi
 OBJ := src/grr.o src/linux.o
 
 all: $(APP)

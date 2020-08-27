@@ -53,6 +53,7 @@ convert_mmap(struct boot_params *boot_params, efi_size *map_key)
 	efi_memory_descriptor *mmap_ent;
 
 	/* E820 memory map */
+	efi_size	e820_entries;
 	e820_entry	*e820_cur;
 
 	status = EFI_SUCCESS;
@@ -79,12 +80,15 @@ retry:
 
 	/* Allocate an E820 memory map with the same number of entries */
 	e820_cur = boot_params->e820_table;
+	e820_entries = mmap_size / desc_size;
 
 	/* Make sure this firmware's memory map is compatible with the kernel */
-	if (mmap_size / desc_size > E820_MAX_ENTRIES_ZEROPAGE) {
+	if (e820_entries > E820_MAX_ENTRIES_ZEROPAGE) {
 		free(mmap);
 		return EFI_UNSUPPORTED;
 	}
+
+	boot_params->e820_entries = e820_entries;
 
 	/* Convert UEFI memory map to E820 */
 	for (mmap_ent = mmap; (void *) mmap_ent < mmap + mmap_size;
@@ -120,6 +124,40 @@ retry:
 	return status;
 }
 
+static
+efi_u64
+gdt[] = {
+	0,
+	0,
+	0x00209A0000000000,	/* __BOOT_CS */
+	0x0000920000000000,	/* __BOOT_DS */
+};
+
+static
+void
+load_gdt(void)
+{
+	struct {
+		efi_u16 limit;
+		efi_u64 addr;
+	} __attribute__((packed)) gdtr;
+
+	gdtr.limit = sizeof(gdt);
+	gdtr.addr = (efi_u64) gdt;
+
+	asm volatile ("lgdt %0\n"
+			"pushq $0x10\n"
+			"pushq $reload_cs\n"
+			"retfq; reload_cs:\n"
+			"movl $0x18, %%eax\n"
+			"movl %%eax, %%ds\n"
+			"movl %%eax, %%es\n"
+			"movl %%eax, %%ss\n"
+			"movl %%eax, %%fs\n"
+			"movl %%eax, %%gs"
+			 :: "m" (gdtr) : "rax");
+}
+
 efi_status
 boot_linux(efi_ch16 *filename, char *cmdline)
 {
@@ -152,6 +190,8 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 
 	if (EFI_ERROR(status))
 		goto err_close;
+
+	print(L"Boot params at %p\n", boot_params);
 
 	/* Zero boot params */
 	bzero(boot_params, sizeof(struct boot_params));
@@ -197,7 +237,7 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 	/* Load kernel */
 	status = kernel_file->set_position(
 		kernel_file,
-		boot_params->hdr.setup_sects * 512);
+		(boot_params->hdr.setup_sects + 1) * 512);
 
 	if (EFI_ERROR(status))
 		goto err_free_kernel;
@@ -239,10 +279,16 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 	if (EFI_ERROR(status))
 		goto err_free_cmdline;
 
+	load_gdt();
+
 	asm volatile (
+		"cli\n"
 		"movq %0, %%rax\n"
 		"movq %1, %%rsi\n"
-		"jmp *%%rax" :: "r" (kernel_base + 0x200), "r" (boot_params));
+		"jmp *%%rax" ::
+		"g" (kernel_base + 0x200),
+		"g" (boot_params)
+		: "rax", "rsi");
 
 	for (;;)
 		;
