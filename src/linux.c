@@ -4,6 +4,7 @@
 
 #include <efi.h>
 #include <efiutil.h>
+#include <khelper.h>
 #include "bootparam.h"
 
 #define PAGE_SIZE 4096
@@ -44,6 +45,7 @@ efi_status
 convert_mmap(struct boot_params *boot_params, efi_size *map_key)
 {
 	efi_status status;
+	efi_loaded_image_protocol *loaded_image;
 
 	/* UEFI memory map */
 	void		*mmap;
@@ -53,16 +55,21 @@ convert_mmap(struct boot_params *boot_params, efi_size *map_key)
 	efi_memory_descriptor *mmap_ent;
 
 	/* E820 memory map */
+	efi_u32		e820_last_type;
 	efi_size	e820_entries;
 	e820_entry	*e820_cur;
 
-	status = EFI_SUCCESS;
+	status = bs->handle_protocol(
+		self_image_handle,
+		&(efi_guid) EFI_LOADED_IMAGE_PROTOCOL_GUID,
+		(void **) &loaded_image);
+	if (EFI_ERROR(status))
+		return status;
 
 	mmap = NULL;
 	mmap_size = 0;
 
 retry:
-
 	status = bs->get_memory_map(
 		&mmap_size,
 		mmap,
@@ -71,7 +78,7 @@ retry:
 		&desc_ver);
 
 	if (status == EFI_BUFFER_TOO_SMALL) {
-		mmap = malloc(mmap_size);
+		mmap = efi_alloc(mmap_size);
 		goto retry;
 	}
 
@@ -81,20 +88,24 @@ retry:
 	/* Allocate an E820 memory map with the same number of entries */
 	e820_cur = boot_params->e820_table;
 	e820_entries = mmap_size / desc_size;
-
 	/* Make sure this firmware's memory map is compatible with the kernel */
 	if (e820_entries > E820_MAX_ENTRIES_ZEROPAGE) {
-		free(mmap);
+		efi_free(mmap);
 		return EFI_UNSUPPORTED;
 	}
-
 	boot_params->e820_entries = e820_entries;
 
 	/* Convert UEFI memory map to E820 */
+	e820_last_type = 0;
 	for (mmap_ent = mmap; (void *) mmap_ent < mmap + mmap_size;
 				mmap_ent = (void *) mmap_ent + desc_size) {
+		/* Make sure the kernel won't trash us */
+		if (mmap_ent->start == (efi_size) loaded_image->image_base)
+			mmap_ent->type = efi_runtime_services_code;
+
 		e820_cur->addr = mmap_ent->start;
 		e820_cur->size = mmap_ent->number_of_pages * PAGE_SIZE;
+
 		switch (mmap_ent->type) {
 		case efi_conventional_memory:
 		case efi_loader_code:
@@ -117,11 +128,32 @@ retry:
 			e820_cur->type = E820_RESERVED;
 			break;
 		}
-		++e820_cur;
+
+		/* Merge subsequent regions with the same type */
+		if (e820_cur->type == e820_last_type &&
+				e820_cur[-1].addr +
+				e820_cur[-1].size == e820_cur->addr) {
+			e820_cur[-1].size += e820_cur->size;
+			--boot_params->e820_entries;
+		} else {
+			e820_last_type = e820_cur->type;
+			++e820_cur;
+		}
 	}
 
 	/* NOTE: the UEFI mmap cannot be freed otherwise UEFI shits itself */
 	return status;
+}
+
+static
+void
+print_e820_mmap(efi_size entries, e820_entry *mmap)
+{
+	while (entries--) {
+		efi_print(L"%d\t%p-%p\n", mmap->type, mmap->addr,
+			mmap->addr + mmap->size - 1);
+		++mmap;
+	}
 }
 
 static
@@ -204,7 +236,7 @@ setup_video(struct boot_params *boot_params)
 
 end:
 	if (handles)
-		free(handles);
+		efi_free(handles);
 	return status;
 }
 
@@ -242,58 +274,107 @@ load_gdt(void)
 			 :: "m" (gdtr) : "rax");
 }
 
+static
 efi_status
-boot_linux(efi_ch16 *filename, char *cmdline)
+locate_self_volume(efi_simple_file_system_protocol **self_volume)
+{
+	efi_status status;
+	efi_loaded_image_protocol *self_loaded_image;
+
+	status = bs->handle_protocol(
+		self_image_handle,
+		&(efi_guid) EFI_LOADED_IMAGE_PROTOCOL_GUID,
+		(void **) &self_loaded_image);
+	if (EFI_ERROR(status))
+		return status;
+
+	status = bs->handle_protocol(
+		self_loaded_image->device_handle,
+		&(efi_guid) EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+		(void **) self_volume);
+	return status;
+}
+
+#define EFI_ACPI_TABLE_GUID \
+  { 0x8868e871, 0xe4f1, 0x11d3, 0xbc, 0x22, 0x0, 0x80, \
+  	0xc7, 0x3c, 0x88, 0x81 }
+
+static
+efi_status
+read_file(efi_file_protocol *file, efi_ssize offs, efi_size size, void *buffer)
+{
+	efi_status status;
+	efi_size outsize;
+
+	if (offs >= 0) {
+		status = file->set_position(file, offs);
+		if (EFI_ERROR(status))
+			return status;
+	}
+
+	outsize = size;
+	status = file->read(file, &outsize, buffer);
+	if (EFI_ERROR(status))
+		return status;
+
+	return status;
+}
+
+efi_status
+boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 {
 	efi_status		status;
-	efi_size		len;
-	efi_file_protocol	*kernel_file;
-	struct boot_params	*boot_params;
+
 	efi_size		cmdline_size;
-	void			*cmdline_base;
+	struct boot_params	*boot_params;
+
+	efi_simple_file_system_protocol	*volume;
+	efi_file_protocol		*root_dir;
+
+	efi_file_protocol	*kernel_file;
 	void			*kernel_base;
 	efi_size		map_key;
 
-	/* Open kernel */
-	status = self_root_dir->open(
-		self_root_dir,
-		&kernel_file,
-		filename,
-		EFI_FILE_MODE_READ,
-		0);
-
-	if (EFI_ERROR(status))
-		goto err;
-
-	/* Allocate boot params */
+	/* Allocate boot params + cmdline buffer */
+	cmdline_size = strlen(cmdline) + 1;
 	status = bs->allocate_pages(
 		allocate_any_pages,
-		efi_loader_code,
-		PAGE_COUNT(sizeof(struct boot_params)),
+		efi_loader_data,
+		PAGE_COUNT(sizeof(struct boot_params) + cmdline_size),
 		(efi_physical_address *) &boot_params);
-
 	if (EFI_ERROR(status))
-		goto err_close;
-
-	print(L"Boot params at %p\n", boot_params);
-
+		return status;
+	efi_print(L"Boot params at %p\n", boot_params);
 	/* Zero boot params */
-	bzero(boot_params, sizeof(struct boot_params));
+	memset(boot_params, 0, sizeof(struct boot_params));
+	/* Copy cmdline */
+	memcpy(&boot_params[1], cmdline, cmdline_size);
+
+	/* Open boot volume */
+	status = locate_self_volume(&volume);
+	if (EFI_ERROR(status))
+		goto err_free_boot_params;
+	status = volume->open_volume(volume, &root_dir);
+	if (EFI_ERROR(status))
+		goto err_free_boot_params;
+
+	/* Open kernel */
+	status = root_dir->open(
+		root_dir,
+		&kernel_file,
+		kernel_path,
+		EFI_FILE_MODE_READ,
+		0);
+	if (EFI_ERROR(status))
+		goto err_close_rootdir;
 
 	/* Read setup header */
-	status = kernel_file->set_position(kernel_file, 0x1f1);
-
+	status = read_file(kernel_file,
+		0x1f1,
+		sizeof(struct setup_header),
+		&boot_params->hdr);
 	if (EFI_ERROR(status))
-		goto err_free_params;
-
-	len = sizeof(struct setup_header);
-	status = kernel_file->read(kernel_file, &len, &boot_params->hdr);
-
-	if (EFI_ERROR(status))
-		goto err_free_params;
-
-	if (len != sizeof(struct setup_header))
-		goto err_badkernel;
+		goto err_close_kernel;
 
 	/* Enforce all assumptions made about the kernel image */
 	if (boot_params->hdr.boot_flag != 0xaa55 ||
@@ -302,74 +383,64 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 			!boot_params->hdr.relocatable_kernel ||
 			!(boot_params->hdr.xloadflags & XLF_KERNEL_64) ||
 			!(boot_params->hdr.xloadflags
-				& XLF_CAN_BE_LOADED_ABOVE_4G))
-		goto err_badkernel;
+				& XLF_CAN_BE_LOADED_ABOVE_4G)) {
+		status = EFI_INVALID_PARAMETER;
+		goto err_close_kernel;
+	}
 
 	/* Allocate buffer for the kernel image */
-	print(L"Kernel alingment: %p\n", boot_params->hdr.kernel_alignment);
-
+	efi_print(L"Kernel alingment: %p\n", boot_params->hdr.kernel_alignment);
 	status = alloc_aligned(
 		boot_params->hdr.kernel_alignment,
 		boot_params->hdr.init_size,
 		&kernel_base);
-
 	if (EFI_ERROR(status))
-		goto err_free_params;
-
-	print(L"Kernel will be loaded at: %p\n", kernel_base);
+		goto err_close_kernel;
+	efi_print(L"Kernel will be loaded at: %p\n", kernel_base);
 
 	/* Load kernel */
-	status = kernel_file->set_position(
-		kernel_file,
-		(boot_params->hdr.setup_sects + 1) * 512);
-
+	status = read_file(kernel_file,
+		(boot_params->hdr.setup_sects + 1) * 512,
+		boot_params->hdr.init_size,
+		kernel_base);
 	if (EFI_ERROR(status))
 		goto err_free_kernel;
 
-	len = boot_params->hdr.init_size;
-	status = kernel_file->read(kernel_file, &len, kernel_base);
+	/* Now we can close all file handles */
+	kernel_file->close(kernel_file);
+	root_dir->close(root_dir);
 
-	if (EFI_ERROR(status))
-		goto err_free_kernel;
-
-	/* Kernel command line */
-	cmdline_size = ascii_strlen(cmdline) + 1;
-	status = bs->allocate_pages(
-		allocate_any_pages,
-		efi_loader_code,
-		PAGE_COUNT(cmdline_size),
-		(efi_physical_address *) &cmdline_base);
-
-	if (EFI_ERROR(status))
-		goto err_free_kernel;
-
-	memcpy(cmdline_base, cmdline, cmdline_size);
-
-	/* Fill boot parameters */
+	/* Fake GRUB as the bootloader */
 	boot_params->hdr.type_of_loader = 0xff;
-	boot_params->hdr.loadflags &= ~(1 << 5); /* Make sure the kernel is *not* quiet */
-	boot_params->hdr.cmdline_size = cmdline_size;
-	boot_params->hdr.cmd_line_ptr = (efi_u32) (efi_u64) cmdline_base;
-	boot_params->ext_cmd_line_ptr = (efi_u32) ((efi_u64) cmdline_base >> 32);
+	/* Make sure the kernel is *not* quiet */
+	boot_params->hdr.loadflags &= ~(1 << 5);
+	/* The command line is in the same buffer right after the bootparams */
+	boot_params->hdr.cmd_line_ptr = (efi_u64) &boot_params[1];
+	boot_params->ext_cmd_line_ptr = (efi_u64) &boot_params[1] >> 32;
 
+	/* Find ACPI tables */
+	for (size_t i = 0; i < st->cnt_config_entries; ++i)
+		if (!memcmp(&st->config_entries[i].vendor_guid,
+				&(efi_guid) EFI_ACPI_TABLE_GUID,
+				sizeof(efi_guid)))
+			boot_params->acpi_rsdp_addr =
+				(efi_size) st->config_entries[i].vendor_table;
+
+	/* Find the framebuffer */
 	status = setup_video(boot_params);
-
 	if (EFI_ERROR(status))
-		print(L"WARN: graphics setup failed, continuing...\n");
+		efi_print(L"WARN: graphics setup failed!\n");
 
+	/* Convert the UEFI memory map to E820 for the kernel */
 	status = convert_mmap(boot_params, &map_key);
-
 	if (EFI_ERROR(status))
-		goto err_free_cmdline;
-
+		return status;
 	/* Jump to kernel */
 	status = bs->exit_boot_services(self_image_handle, map_key);
-
 	if (EFI_ERROR(status))
-		goto err_free_cmdline;
+		return status;
 
 	load_gdt();
-
 	asm volatile (
 		"cli\n"
 		"movq %0, %%rax\n"
@@ -379,22 +450,16 @@ boot_linux(efi_ch16 *filename, char *cmdline)
 		"g" (boot_params)
 		: "rax", "rsi");
 
-	for (;;)
-		;
-
-err_badkernel:
-	status = EFI_INVALID_PARAMETER;
-err_free_cmdline:
-	bs->free_pages((efi_physical_address) cmdline_base,
-		PAGE_COUNT(cmdline_size));
 err_free_kernel:
 	bs->free_pages((efi_physical_address) kernel_base,
 		PAGE_COUNT(boot_params->hdr.init_size));
-err_free_params:
-	bs->free_pages((efi_physical_address) boot_params,
-		PAGE_COUNT(sizeof(*boot_params)));
-err_close:
+err_close_kernel:
 	kernel_file->close(kernel_file);
-err:
+err_close_rootdir:
+	root_dir->close(root_dir);
+err_free_boot_params:
+	bs->free_pages(
+		(efi_physical_address) boot_params,
+		PAGE_COUNT(sizeof(struct boot_params) + cmdline_size));
 	return status;
 }
