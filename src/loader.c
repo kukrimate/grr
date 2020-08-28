@@ -241,40 +241,6 @@ end:
 }
 
 static
-efi_u64
-gdt[] = {
-	0,
-	0,
-	0x00209A0000000000,	/* __BOOT_CS */
-	0x0000920000000000,	/* __BOOT_DS */
-};
-
-static
-void
-load_gdt(void)
-{
-	struct {
-		efi_u16 limit;
-		efi_u64 addr;
-	} __attribute__((packed)) gdtr;
-
-	gdtr.limit = sizeof(gdt);
-	gdtr.addr = (efi_u64) gdt;
-
-	asm volatile ("lgdt %0\n"
-			"pushq $0x10\n"
-			"pushq $reload_cs\n"
-			"retfq; reload_cs:\n"
-			"movl $0x18, %%eax\n"
-			"movl %%eax, %%ds\n"
-			"movl %%eax, %%es\n"
-			"movl %%eax, %%ss\n"
-			"movl %%eax, %%fs\n"
-			"movl %%eax, %%gs"
-			 :: "m" (gdtr) : "rax");
-}
-
-static
 efi_status
 locate_self_volume(efi_simple_file_system_protocol **self_volume)
 {
@@ -320,6 +286,28 @@ read_file(efi_file_protocol *file, efi_ssize offs, efi_size size, void *buffer)
 	return status;
 }
 
+static
+efi_status
+get_file_size(efi_file_protocol *file, efi_size *file_size)
+{
+	efi_status	status;
+	efi_file_info	*file_info;
+
+	status = get_file_info(file, &file_info);
+	if (EFI_ERROR(status))
+		return status;
+
+	*file_size = file_info->file_size;
+	efi_free(file_info);
+	return status;
+}
+
+void
+vmm_stack_init(void);
+
+void
+vmm_startup(void *linux_entry, void *boot_params);
+
 efi_status
 boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 {
@@ -333,6 +321,11 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 
 	efi_file_protocol	*kernel_file;
 	void			*kernel_base;
+
+	efi_file_protocol	*initrd_file;
+	efi_size		initrd_size;
+	void			*initrd_base;
+
 	efi_size		map_key;
 
 	/* Allocate boot params + cmdline buffer */
@@ -406,7 +399,36 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	if (EFI_ERROR(status))
 		goto err_free_kernel;
 
+	/*
+	 * Load initrd
+	 */
+	status = root_dir->open(
+		root_dir,
+		&initrd_file,
+		initrd_path,
+		EFI_FILE_MODE_READ,
+		0);
+	if (EFI_ERROR(status))
+		goto err_free_kernel;
+
+	status = get_file_size(initrd_file, &initrd_size);
+	if (EFI_ERROR(status))
+		goto err_close_initrd;
+
+	status = bs->allocate_pages(
+		allocate_any_pages,
+		efi_loader_data,
+		PAGE_COUNT(initrd_size),
+		(efi_physical_address *) &initrd_base);
+	if (EFI_ERROR(status))
+		goto err_close_initrd;
+
+	status = read_file(initrd_file, -1, initrd_size, initrd_base);
+	if (EFI_ERROR(status))
+		goto err_free_initrd;
+
 	/* Now we can close all file handles */
+	initrd_file->close(initrd_file);
 	kernel_file->close(kernel_file);
 	root_dir->close(root_dir);
 
@@ -417,6 +439,11 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	/* The command line is in the same buffer right after the bootparams */
 	boot_params->hdr.cmd_line_ptr = (efi_u64) &boot_params[1];
 	boot_params->ext_cmd_line_ptr = (efi_u64) &boot_params[1] >> 32;
+	/* Set initrd address and size */
+	boot_params->hdr.ramdisk_image = (efi_u64) initrd_base;
+	boot_params->ext_ramdisk_image = (efi_u64) initrd_base >> 32;
+	boot_params->hdr.ramdisk_size = (efi_u64) initrd_size;
+	boot_params->ext_ramdisk_size = (efi_u64) initrd_size >> 32;
 
 	/* Find ACPI tables */
 	for (size_t i = 0; i < st->cnt_config_entries; ++i)
@@ -435,21 +462,20 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	status = convert_mmap(boot_params, &map_key);
 	if (EFI_ERROR(status))
 		return status;
-	/* Jump to kernel */
+	/* Get rid of boot services */
 	status = bs->exit_boot_services(self_image_handle, map_key);
 	if (EFI_ERROR(status))
 		return status;
 
-	load_gdt();
-	asm volatile (
-		"cli\n"
-		"movq %0, %%rax\n"
-		"movq %1, %%rsi\n"
-		"jmp *%%rax" ::
-		"g" (kernel_base + 0x200),
-		"g" (boot_params)
-		: "rax", "rsi");
+	/* Call the VMM which will start the kernel in guest mode */
+	vmm_stack_init();
+	vmm_startup(kernel_base + 0x200, boot_params);
 
+err_free_initrd:
+	bs->free_pages((efi_physical_address) initrd_base,
+		PAGE_COUNT(initrd_size));
+err_close_initrd:
+	initrd_file->close(initrd_file);
 err_free_kernel:
 	bs->free_pages((efi_physical_address) kernel_base,
 		PAGE_COUNT(boot_params->hdr.init_size));

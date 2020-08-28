@@ -11,6 +11,11 @@ boot_linux(
 	efi_ch16 *initrd_path,
 	const char *cmdline);
 
+#define KERNEL	L"\\efi\\grr\\vmlinuz-4.19.0-10-amd64"
+#define INITRD	L"\\efi\\grr\\initrd.img-4.19.0-10-amd64"
+#define CMDLINE	"earlyprintk=serial,ttyS0,38400,keep " \
+	"root=UUID=b2e1c499-2f97-4f0b-a3a6-d356dab64705 ro"
+
 efi_status
 efiapi
 efi_main(efi_handle image_handle, efi_system_table *system_table)
@@ -19,8 +24,6 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 
 	efi_init(image_handle, system_table);
 
-	status = boot_linux(L"\\efi\\grr\\vmlinuz-4.19.0-10-amd64",
-		L"\\efi\\grr\\initrd.img-4.19.0-10-amd64",
-		"earlyprintk=serial,ttyS0,38400,keep lockdown");
+	status = boot_linux(KERNEL, INITRD, CMDLINE);
 	efi_abort(L"Failed to boot Linux!\r\n", status);
 }
