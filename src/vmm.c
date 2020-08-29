@@ -23,11 +23,13 @@ gdt[] = {
 /*
  * VMCB
  */
+extern
 struct vmcb vmcb;
 
 /*
  * Host save state
  */
+static
 uint8_t host_save_state[4096] __attribute__((aligned(4096)));
 
 #define MSR_EFER	0xC0000080
@@ -64,7 +66,7 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Setup VMCB */
 	vmcb.guest_asid = 1;
 	vmcb.vmrun = 1;
-	// vmcb.cpuid = 1;
+	vmcb.cpuid = 1;
 
 	vmcb.gdtr_limit = sizeof(gdt);
 	vmcb.gdtr_base = (uint64_t) gdt;
@@ -125,9 +127,6 @@ void
 vmexit_handler(struct gpr_save *gprs)
 {
 	uart_print("#VMEXIT(0x%x)\n", vmcb.exitcode);
-	uart_print("Exitinfo: %x %x\n", vmcb.exitinfo1, vmcb.exitinfo2);
-	// for (;;)
-	// 	;
 
 	switch (vmcb.exitcode) {
 	case VMEXIT_CPUID:

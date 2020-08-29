@@ -4,6 +4,12 @@
 
 .section .bss
 
+/* VMCB */
+.align 4096
+.global vmcb
+vmcb:
+.skip 4096
+
 /* Stack for the VMM */
 vmm_stack_base:
 .skip 8192
