@@ -71,4 +71,34 @@ wrmsr(uint64_t msr, uint64_t value)
 	asm volatile ("wrmsr" :: "c" (msr), "a" (low), "d" (high));
 }
 
+static
+uint64_t
+read_cr0(void)
+{
+	uint64_t result;
+
+	asm volatile ("movq %%cr0, %0" : "=g" (result));
+	return result;
+}
+
+static
+uint64_t
+read_cr3(void)
+{
+	uint64_t result;
+
+	asm volatile ("movq %%cr3, %0" : "=g" (result));
+	return result;
+}
+
+static
+uint64_t
+read_cr4(void)
+{
+	uint64_t result;
+
+	asm volatile ("movq %%cr4, %0" : "=g" (result));
+	return result;
+}
+
 #endif

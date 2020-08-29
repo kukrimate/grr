@@ -9,6 +9,8 @@
 #include "uart.h"
 #include "x86.h"
 
+/* The VMCB attrib bits are 55:52 and 47:40 from here */
+
 static
 uint64_t
 gdt[] = {
@@ -18,39 +20,26 @@ gdt[] = {
 	0x0000920000000000,	/* __BOOT_DS */
 };
 
-static
-void
-load_gdt(void)
-{
-	struct {
-		uint16_t limit;
-		uint64_t addr;
-	} __attribute__((packed)) gdtr;
-
-	gdtr.limit = sizeof(gdt);
-	gdtr.addr = (uint64_t) gdt;
-
-	asm volatile ("lgdt %0\n"
-			"pushq $0x10\n"
-			"pushq $reload_cs\n"
-			"retfq; reload_cs:\n"
-			"movl $0x18, %%eax\n"
-			"movl %%eax, %%ds\n"
-			"movl %%eax, %%es\n"
-			"movl %%eax, %%ss\n"
-			"movl %%eax, %%fs\n"
-			"movl %%eax, %%gs"
-			 :: "m" (gdtr) : "rax");
-}
-
 /*
- * Put the VMCB in .bss
+ * VMCB
  */
 static
 struct vmcb vmcb;
 
+/*
+ * Host save state
+ */
+static
+uint8_t host_save_state[4096] __attribute__((aligned(4096)));
+
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
+
+#define MSR_VM_HSAVE_PA	0xC0010117
+
+void guest_entry();
+void ge_kernel_addr();
+void ge_boot_params();
 
 void
 vmm_startup(void *linux_entry, void *boot_params)
@@ -62,22 +51,59 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Enable SVM */
 	uart_print("Enabling SVM...\n", efer);
 	efer = rdmsr(MSR_EFER);
-	// wrmsr(MSR_EFER, efer | EFER_SVME);
+	wrmsr(MSR_EFER, efer | EFER_SVME);
+
+	/* Load host save state */
+	uart_print("Host save state at: %p\n", host_save_state);
+	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) host_save_state);
+
+	/* Setup VMCB */
+	vmcb.guest_asid = 1;
+	vmcb.vmrun = 1;
+
+	vmcb.gdtr_limit = sizeof(gdt);
+	vmcb.gdtr_base = (uint64_t) gdt;
+
+	vmcb.es_selector = 0x18;
+	vmcb.es_attrib = 0x0092;
+
+	vmcb.cs_selector = 0x10;
+	vmcb.cs_attrib = 0x029a;
+
+	vmcb.ss_selector = 0x18;
+	vmcb.ss_attrib = 0x0092;
+
+	vmcb.ds_selector = 0x18;
+	vmcb.ds_attrib = 0x0092;
+
+	vmcb.fs_selector = 0x18;
+	vmcb.fs_attrib = 0x0092;
+
+	vmcb.gs_selector = 0x18;
+	vmcb.gs_attrib = 0x0092;
+
+	vmcb.cr0 = read_cr0();
+	vmcb.cr3 = read_cr3();
+	vmcb.cr4 = read_cr4();
+	vmcb.efer = rdmsr(MSR_EFER) & ~EFER_SVME;
+
+	*(uint64_t *) (ge_kernel_addr + 2) = (uint64_t) linux_entry;
+	*(uint64_t *) (ge_boot_params + 2) = (uint64_t) boot_params;
+
+	vmcb.rip = (uint64_t) guest_entry;
+	uart_print("Guest entry point: %p\n", guest_entry);
 
 	/* Start the guest */
+	uart_print("VMCB at: %p\n", &vmcb);
 	uart_print("Starting guest...\n");
-	asm volatile (
-		"movq %0, %%rax\n"
-		"vmrun"
-		:: "g" (&vmcb) : "rax");
+
+	for (;;) {
+		asm volatile (
+			"movq %0, %%rax\n"
+			"vmrun"
+			:: "g" (&vmcb) : "rax");
 
 
-	// load_gdt();
-	// asm volatile (
-	// 	"movq %0, %%rax\n"
-	// 	"movq %1, %%rsi\n"
-	// 	"jmp *%%rax" ::
-	// 	"g" (linux_entry),
-	// 	"g" (boot_params)
-	// 	: "rax", "rsi");
+		uart_print("#VMEXIT(%d)\n", vmcb.exitcode);
+	}
 }
