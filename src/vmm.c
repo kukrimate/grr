@@ -9,39 +9,6 @@
 #include "uart.h"
 #include "x86.h"
 
-static
-uint64_t
-gdt[] = {
-	0,
-	0x00209A0000000000,	/* CS */
-	0x0000920000000000,	/* DS */
-};
-
-static
-void
-vmm_load_gdt(void)
-{
-	struct {
-		uint16_t limit;
-		uint64_t addr;
-	} __attribute__((packed)) gdtr;
-
-	gdtr.limit = sizeof(gdt);
-	gdtr.addr = (uint64_t) gdt;
-
-	asm volatile ("lgdt %0\n"
-			"pushq $0x08\n"
-			"pushq $reload_cs\n"
-			"retfq; reload_cs:\n"
-			"movl $0x10, %%eax\n"
-			"movl %%eax, %%ds\n"
-			"movl %%eax, %%es\n"
-			"movl %%eax, %%ss\n"
-			"movl %%eax, %%fs\n"
-			"movl %%eax, %%gs"
-			 :: "m" (gdtr) : "rax");
-}
-
 void vmm_pml4();
 void vmm_pdp();
 
@@ -139,7 +106,6 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Start the guest */
 	uart_print("Starting guest...\n");
 
-	vmm_load_gdt();
 	vmm_switchpg();
 	vmm_run_guest(boot_params);
 }

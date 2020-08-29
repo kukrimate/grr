@@ -33,18 +33,44 @@ vmm_stack_top:
 
 .section .data
 
+/* GDT for the VMM */
+.align 16
+vmm_gdt:
+.quad	0
+.quad	0x00209a0000000000
+.quad	0x0000920000000000
+
+vmm_gdtr:
+.word	vmm_gdtr - vmm_gdt
+.quad	vmm_gdt
+
 /* NULL idtr to get rid of the firmware code */
-null_idtr:
+.align 16
+vmm_idtr:
 .word	0
 .quad	0
 
 .section .text
 
 /* Switch to the VMM stack */
-.global vmm_stack_init
-vmm_stack_init:
-	/* Kill the firmware's IDT */
-	lidt null_idtr
+.global vmm_init
+vmm_init:
+	/* Load the VMM's GDT */
+	lgdt vmm_gdtr
+	pushq $0x08
+	pushq $reload_cs
+	retfq
+reload_cs:
+	movl $0x10, %eax
+	movl %eax, %ds
+	movl %eax, %es
+	movl %eax, %ss
+	movl %eax, %fs
+	movl %eax, %gs
+
+	/* Load the VMM's IDT */
+	lidt vmm_idtr
+
 	/* Move the return address into RAX */
 	movq (%rsp), %rax
 	/* Switch stacks */
