@@ -1,7 +1,11 @@
 include ../tools/Makefile.efi
 
 APP := hdd/efi/boot/bootx64.efi
-OBJ := src/grr.o src/loader.o src/vmm.o src/helper.o src/uart.o
+OBJ := src/efi/main.o \
+	src/efi/loader.o \
+	src/vmm/uart.o \
+	src/vmm/helper.o \
+	src/vmm/vmm.o
 
 all: $(APP)
 

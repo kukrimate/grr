@@ -1,5 +1,5 @@
 /*
- * GRR main file
+ * Entry point from UEFI
  */
 
 #include <efi.h>
