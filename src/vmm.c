@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <khelper.h>
-#include <cpuid.h>
 #include "vmcb.h"
 #include "uart.h"
 #include "x86.h"
@@ -169,27 +168,34 @@ struct gpr_save {
 void
 vmexit_handler(struct gpr_save *gprs)
 {
-	unsigned int cpuid[4];
+	uint64_t rax, rbx, rcx, rdx;
 
 	uart_print("#VMEXIT(0x%x)\n", vmcb.exitcode);
 	switch (vmcb.exitcode) {
 	case VMEXIT_CPUID:
 		uart_print("CPUID EAX=%x\n", vmcb.rax);
-		__get_cpuid(vmcb.rax,
-			&cpuid[0],
-			&cpuid[1],
-			&cpuid[2],
-			&cpuid[3]);
-		if (!vmcb.rax) {
-			vmcb.rax = cpuid[0];
+
+		rax = vmcb.rax;
+		asm volatile (
+			"movq %0, %%rax\n"
+			"cpuid\n"
+			"movq %%rax, %0\n"
+			"movq %%rbx, %1\n"
+			"movq %%rcx, %2\n"
+			"movq %%rdx, %3\n"
+			: "=m" (rax), "=m" (rbx), "=m" (rcx), "=m" (rdx)
+			:: "rax", "rbx", "rcx", "rdx");
+
+		if (!vmcb.rax) { /* Fake CPUID to BootlegAMD */
+			vmcb.rax = rax;
 			gprs->rbx = 0x746f6f42;
 			gprs->rcx = 0x0000444d;
 			gprs->rdx = 0x4167656c;
 		} else {
-			vmcb.rax = cpuid[0];
-			gprs->rbx = cpuid[1];
-			gprs->rcx = cpuid[2];
-			gprs->rdx = cpuid[3];
+			vmcb.rax = rax;
+			gprs->rbx = rbx;
+			gprs->rcx = rcx;
+			gprs->rdx = rdx;
 		}
 
 		vmcb.rip += 2;
