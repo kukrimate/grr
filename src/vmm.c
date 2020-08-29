@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <khelper.h>
+#include <cpuid.h>
 #include "vmcb.h"
 #include "uart.h"
 #include "x86.h"
@@ -46,6 +47,29 @@ void ge_boot_params();
 
 void
 vmm_run_guest();
+
+void vmm_pml4();
+void vmm_pdp();
+
+
+static
+void
+vmm_switchpg()
+{
+	uint64_t *pml4, *pdp, cur_phys;
+	size_t i;
+
+	pml4 = (uint64_t *) vmm_pml4;
+	pdp = (uint64_t *) vmm_pdp;
+	cur_phys = 0;
+
+	for (i = 0; i < 512; ++i) {
+		pdp[i] = cur_phys | 0x83;
+		cur_phys += 0x40000000;
+	}
+	pml4[0] = (uint64_t) vmm_pdp | 3;
+	asm volatile ("movq %0, %%cr3" :: "r" (vmm_pml4));
+}
 
 void
 vmm_startup(void *linux_entry, void *boot_params)
@@ -103,10 +127,13 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Start the guest */
 	uart_print("VMCB at: %p\n", &vmcb);
 	uart_print("Starting guest...\n");
+
+	vmm_switchpg();
 	vmm_run_guest();
 }
 
 struct gpr_save {
+	u64 rax;
 	u64 rbx;
 	u64 rcx;
 	u64 rdx;
@@ -121,16 +148,37 @@ struct gpr_save {
 	u64 r13;
 	u64 r14;
 	u64 r15;
-};
+} __attribute__((packed));
 
 void
 vmexit_handler(struct gpr_save *gprs)
 {
-	uart_print("#VMEXIT(0x%x)\n", vmcb.exitcode);
+	unsigned int cpuid[4];
 
+	uart_print("#VMEXIT(0x%x)\n", vmcb.exitcode);
 	switch (vmcb.exitcode) {
 	case VMEXIT_CPUID:
-		uart_print("cpuid rax=%p\n", vmcb.rax);
+		uart_print("CPUID EAX=%x\n", vmcb.rax);
+		__get_cpuid(vmcb.rax,
+			&cpuid[0],
+			&cpuid[1],
+			&cpuid[2],
+			&cpuid[3]);
+		uart_print("EAX=%x, EBX=%x, ECX=%x, EDX=%x\n",
+			cpuid[0], cpuid[1], cpuid[2], cpuid[3]);
+		if (!vmcb.rax) {
+			vmcb.rax = cpuid[0];
+			gprs->rbx = 0x746f6f42;
+			gprs->rcx = 0x0000444d;
+			gprs->rdx = 0x4167656c;
+		} else {
+			vmcb.rax = cpuid[0];
+			gprs->rbx = cpuid[1];
+			gprs->rcx = cpuid[2];
+			gprs->rdx = cpuid[3];
+		}
+
+		vmcb.rip += 2;
 		break;
 	case VMEXIT_VMRUN:	/* The guest is not allowed this */
 		break;

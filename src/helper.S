@@ -4,10 +4,21 @@
 
 .section .bss
 
-/* VMCB */
 .align 4096
+
+/* VMCB */
 .global vmcb
 vmcb:
+.skip 4096
+
+/* VMM PML4 */
+.global vmm_pml4
+vmm_pml4:
+.skip 4096
+
+/* VMM PDP */
+.global vmm_pdp
+vmm_pdp:
 .skip 4096
 
 /* Stack for the VMM */
@@ -58,10 +69,12 @@ vmm_run_guest:
 	push %rdx
 	push %rcx
 	push %rbx
+	push %rax
 
-	mov %rsp, %rcx
+	movq %rsp, %rcx
 	call vmexit_handler
 
+	pop %rax
 	pop %rbx
 	pop %rcx
 	pop %rdx
