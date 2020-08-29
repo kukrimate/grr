@@ -31,16 +31,8 @@ vmm_switchpg()
 	asm volatile ("movq %0, %%cr3" :: "r" (vmm_pml4));
 }
 
-/*
- * Host save state
- */
-extern
-void host_save_state();
-
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
-
-#define MSR_VM_HSAVE_PA	0xC0010117
 
 void
 vmm_setup(struct vmcb *vmcb)
@@ -50,9 +42,6 @@ vmm_setup(struct vmcb *vmcb)
 
 	/* Enable SVM */
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SVME);
-
-	/* Set host save state address */
-	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) host_save_state);
 
 	/* Setup VMCB */
 	vmcb->guest_asid = 1;
