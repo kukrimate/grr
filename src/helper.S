@@ -50,6 +50,10 @@ vmm_stack_init:
 /* VMM guest execute loop */
 .global vmm_run_guest
 vmm_run_guest:
+	/* We never return, so might as well own the whole VMM stack */
+	mov $vmm_stack_top, %rsp
+
+1:
 	/* Start the VM */
 	movq $vmcb, %rax
 	vmrun
@@ -69,12 +73,14 @@ vmm_run_guest:
 	push %rdx
 	push %rcx
 	push %rbx
-	push %rax
 
-	movq %rsp, %rcx
+	movq %rsp, %rcx /* Pointer to the register save area */
+
+	/* WARN: Allocate shadow space, otherwise gcc fucks up the stack */
+	sub $32, %rsp
 	call vmexit_handler
+	add $32, %rsp
 
-	pop %rax
 	pop %rbx
 	pop %rcx
 	pop %rdx
@@ -90,7 +96,7 @@ vmm_run_guest:
 	pop %r14
 	pop %r15
 
-	jmp vmm_run_guest
+	jmp 1b
 
 /* Self modifying code ;) */
 .global guest_entry
