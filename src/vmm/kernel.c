@@ -81,6 +81,25 @@ pginit(void)
 	asm volatile ("movq %0, %%cr3" :: "r" (kernel_pml4));
 }
 
+/*
+ * Locking code
+ */
+
+// static
+int bkl = 0;
+
+void
+kernel_bkl_acquire(void)
+{
+	asm volatile ("1: lock btsl $0, %0; jc 1b" : "=m" (bkl));
+}
+
+void
+kernel_bkl_release(void)
+{
+	asm volatile ("lock btrl $0, %0" : "=m" (bkl));
+}
+
 void
 kernel_main(void *kernel_entry, struct boot_params *boot_params)
 {
@@ -96,10 +115,11 @@ kernel_main(void *kernel_entry, struct boot_params *boot_params)
 	uart_print("Kernel PML4: %p\n", kernel_pml4);
 
 	/* SMP init depends on lowmem + page table */
+	kernel_bkl_acquire();
 	acpi_smp_init((acpi_rsdp *) boot_params->acpi_rsdp_addr);
 
 	/* Start the kernel in the VMM */
-	vmm_startup(kernel_entry, boot_params);
+	// vmm_startup(kernel_entry, boot_params);
 	for (;;)
 		;
 }

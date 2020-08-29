@@ -9,28 +9,6 @@
 #include "uart.h"
 #include "x86.h"
 
-void vmm_pml4();
-void vmm_pdp();
-
-static
-void
-vmm_switchpg()
-{
-	uint64_t *pml4, *pdp, cur_phys;
-	size_t i;
-
-	pml4 = (uint64_t *) vmm_pml4;
-	pdp = (uint64_t *) vmm_pdp;
-	cur_phys = 0;
-
-	for (i = 0; i < 512; ++i) {
-		pdp[i] = cur_phys | 0x83;
-		cur_phys += 0x40000000;
-	}
-	pml4[0] = (uint64_t) vmm_pdp | 3;
-	asm volatile ("movq %0, %%cr3" :: "r" (vmm_pml4));
-}
-
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
 
@@ -65,8 +43,6 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->cr3 = read_cr3();
 	vmcb->cr4 = read_cr4();
 	vmcb->efer = rdmsr(MSR_EFER) & ~EFER_SVME;
-
-	vmm_switchpg();
 }
 
 #define VMEXIT_CPUID	0x72

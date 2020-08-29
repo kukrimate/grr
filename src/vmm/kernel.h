@@ -13,4 +13,13 @@ kernel_lowmem_alloc(size_t pages);
 extern
 uint64_t *kernel_pml4;
 
+/*
+ * Big kernel lock, its terrible, but also very easy
+ */
+void
+kernel_bkl_acquire(void);
+
+void
+kernel_bkl_release(void);
+
 #endif

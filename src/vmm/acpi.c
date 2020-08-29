@@ -40,9 +40,17 @@ acpi_find_table(acpi_rsdp *rsdp, u32 signature)
 	return NULL;
 }
 
+/* The LAPIC address as discovered from the MADT */
+static
+void *
+lapic_addr;
+
 /* SMP init trampoline */
 void smp_init16();
 void smp_init16_end();
+
+/* Stack pointer for the AP */
+void smp_init64_rsp();
 
 void
 acpi_smp_init(acpi_rsdp *rsdp)
@@ -62,6 +70,7 @@ acpi_smp_init(acpi_rsdp *rsdp)
 	madt = acpi_find_table(rsdp, ACPI_MADT_SIGNATURE);
 	uart_print("Found MADT at: %p\n", madt);
 
+	lapic_addr = (void *) (uint64_t) madt->lapic_addr;
 	len = madt->hdr.length - sizeof(acpi_madt);
 	madt_entry = madt->entries;
 	while (len) {
@@ -71,20 +80,39 @@ acpi_smp_init(acpi_rsdp *rsdp)
 				madt_entry->lapic.cpu_id,
 				madt_entry->lapic.apic_id);
 
+			/* 4K stack for each AP */
+			*(uint64_t *) (smp_init64_rsp + 2) =
+				(uint64_t) kernel_lowmem_alloc(1) + 4096;
+
 			/* Init IPI */
-			*(uint32_t *) (uint64_t) (madt->lapic_addr + 0x310) =
-			(madt_entry->lapic.apic_id << 24);
-			*(uint32_t *) (uint64_t) (madt->lapic_addr + 0x300) =
-			0x00004500;
+			*(uint32_t *) (lapic_addr + 0x310) =
+				(madt_entry->lapic.apic_id << 24);
+			*(uint32_t *) (lapic_addr + 0x300) = 0x00004500;
 
 			/* Startup IPI */
-			*(uint32_t *) (uint64_t) (madt->lapic_addr + 0x310) =
+			*(uint32_t *) (lapic_addr + 0x310) =
 				(madt_entry->lapic.apic_id << 24);
-			*(uint32_t *) (uint64_t) (madt->lapic_addr + 0x300) =
+			*(uint32_t *) (lapic_addr + 0x300) =
 				0x00004600 | ((uint64_t) trampoline / 4096);
+
+			/* Wait for the AP to come up */
+			kernel_bkl_acquire();
 		}
 
 		len -= madt_entry->length;
 		madt_entry = (void *) madt_entry + madt_entry->length;
 	}
+
+	uart_print("SMP setup done!\n");
+}
+
+/*
+ * C entry point for APs
+ */
+void
+acpi_smp_ap_entry(void)
+{
+	uart_print("AP %d reached C code!\n",
+		*(uint32_t *) (lapic_addr + 0x20) >> 24);
+	kernel_bkl_release();
 }

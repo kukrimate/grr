@@ -99,5 +99,14 @@ movl %eax, %ss
 movl %eax, %fs
 movl %eax, %gs
 
-hlt
-1: jmp 1b
+/* Setup 64-bit stack for this core */
+.global smp_init64_rsp
+smp_init64_rsp:
+movq $0xdeadbeefdeadbeef, %rsp
+
+/* Call into C code */
+call acpi_smp_ap_entry
+
+/* This should never be reached */
+1: hlt
+jmp 1b

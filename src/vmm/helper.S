@@ -16,16 +16,6 @@ vmcb:
 host_save_state:
 .skip 4096
 
-/* VMM PML4 */
-.global vmm_pml4
-vmm_pml4:
-.skip 4096
-
-/* VMM PDP */
-.global vmm_pdp
-vmm_pdp:
-.skip 4096
-
 /* Stack for the VMM */
 vmm_stack_base:
 .skip 8192
