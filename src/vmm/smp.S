@@ -65,11 +65,39 @@ movl %eax, %ss
 movl %eax, %fs
 movl %eax, %gs
 
-1:
-jmp 1b
+/* Enable PAE and PGE */
+movl $0xa0, %eax
+movl %eax, %cr4
+
+/* Load the kernel's page table */
+movl kernel_pml4, %eax
+movl %eax, %cr3
+
+/* Set EFER.LME */
+movl $0xc0000080, %ecx
+rdmsr
+orl $0x100, %eax
+wrmsr
+
+/* Enable paging */
+movl %cr0, %eax
+orl $0x80000000, %eax
+movl %eax, %cr0
+
+/* Leave the 32-bit world */
+ljmpl $0x18, $smp_init64
 
 /*
  * 64-bit SMP init
  */
 smp_init64:
 .code64
+movl $0x20, %eax
+movl %eax, %ds
+movl %eax, %es
+movl %eax, %ss
+movl %eax, %fs
+movl %eax, %gs
+
+hlt
+1: jmp 1b

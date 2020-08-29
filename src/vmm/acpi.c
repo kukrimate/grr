@@ -65,7 +65,8 @@ acpi_smp_init(acpi_rsdp *rsdp)
 	len = madt->hdr.length - sizeof(acpi_madt);
 	madt_entry = madt->entries;
 	while (len) {
-		if (!madt_entry->type && madt_entry->lapic.apic_id) { /* Look for LAPIC entries */
+		/* Look for LAPIC entries */
+		if (!madt_entry->type && madt_entry->lapic.apic_id) {
 			uart_print("Waking up CPU: %d, APIC: %d\n",
 				madt_entry->lapic.cpu_id,
 				madt_entry->lapic.apic_id);

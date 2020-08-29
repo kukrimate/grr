@@ -56,6 +56,31 @@ kernel_lowmem_alloc(size_t pages)
 	return buffer;
 }
 
+/*
+ * Paging setup code
+ */
+
+uint64_t *kernel_pml4;
+
+static
+void
+pginit(void)
+{
+	uint64_t *pdp, cur_phys;
+	size_t i;
+
+	kernel_pml4 = kernel_lowmem_alloc(1);
+	pdp = kernel_lowmem_alloc(1);
+	cur_phys = 0;
+
+	for (i = 0; i < 512; ++i) {
+		pdp[i] = cur_phys | 0x83;
+		cur_phys += 0x40000000;
+	}
+	kernel_pml4[0] = (uint64_t) pdp | 3;
+	asm volatile ("movq %0, %%cr3" :: "r" (kernel_pml4));
+}
+
 void
 kernel_main(void *kernel_entry, struct boot_params *boot_params)
 {
@@ -65,11 +90,16 @@ kernel_main(void *kernel_entry, struct boot_params *boot_params)
 
 	/* We need memory below 1 MiB for SMP startup */
 	lowmem_init(boot_params);
-	/* Do SMP init after lowmem is available */
+
+	/* Use our own page table */
+	pginit();
+	uart_print("Kernel PML4: %p\n", kernel_pml4);
+
+	/* SMP init depends on lowmem + page table */
 	acpi_smp_init((acpi_rsdp *) boot_params->acpi_rsdp_addr);
 
 	/* Start the kernel in the VMM */
-	// vmm_startup(kernel_entry, boot_params);
+	vmm_startup(kernel_entry, boot_params);
 	for (;;)
 		;
 }
