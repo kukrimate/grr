@@ -37,9 +37,6 @@ vmm_switchpg()
 void
 vmm_setup(struct vmcb *vmcb)
 {
-	/* Enable UART */
-	uart_setup();
-
 	/* Enable SVM */
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SVME);
 

@@ -5,7 +5,7 @@
 #include <efi.h>
 #include <efiutil.h>
 #include <khelper.h>
-#include "bootparam.h"
+#include "../bootparam.h"
 
 #define PAGE_SIZE 4096
 #define PAGE_COUNT(x) ((x + PAGE_SIZE - 1) / PAGE_SIZE)
@@ -29,14 +29,6 @@ alloc_aligned(efi_size alingment, efi_size bytes, void **buffer)
 	*buffer += alingment - (efi_size) *buffer % alingment;
 	return status;
 }
-
-enum {
-	E820_USABLE		= 1,
-	E820_RESERVED		= 2,
-	E820_ACPI_RECLAIM	= 3,
-	E820_APCI_NVS		= 4,
-	E820_UNUSABLE		= 5,
-};
 
 typedef struct boot_e820_entry e820_entry;
 
@@ -303,7 +295,7 @@ get_file_size(efi_file_protocol *file, efi_size *file_size)
 }
 
 void
-vmm_startup(void *linux_entry, void *boot_params);
+kernel_main(void *kernel_entry, struct boot_params *boot_params);
 
 efi_status
 boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
@@ -464,8 +456,8 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	if (EFI_ERROR(status))
 		return status;
 
-	/* Call the VMM which will start the kernel in guest mode */
-	vmm_startup(kernel_base + 0x200, boot_params);
+	/* Call the VMM's kernel to start Linux as a guest */
+	kernel_main(kernel_base + 0x200, boot_params);
 
 err_free_initrd:
 	bs->free_pages((efi_physical_address) initrd_base,
