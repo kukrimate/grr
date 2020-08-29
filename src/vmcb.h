@@ -6,6 +6,9 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+/*
+ * Virtual machine control block
+ */
 struct vmcb {
 	/*
 	 * Intercept vectors
@@ -238,5 +241,25 @@ struct vmcb {
 
 	u8  reserved26[2408];		/* Pad to fill a 4K page */
 } __attribute__((packed)) __attribute__ ((aligned (4096)));
+
+/*
+ * General purpose register save area
+ */
+struct gpr_save {
+	u64 rbx;
+	u64 rcx;
+	u64 rdx;
+	u64 rsi;
+	u64 rdi;
+	u64 rbp;
+	u64 r8;
+	u64 r9;
+	u64 r10;
+	u64 r11;
+	u64 r12;
+	u64 r13;
+	u64 r14;
+	u64 r15;
+} __attribute__((packed));
 
 #endif

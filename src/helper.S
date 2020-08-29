@@ -11,6 +11,11 @@
 vmcb:
 .skip 4096
 
+/* VMM host save state */
+.global host_save_state
+host_save_state:
+.skip 4096
+
 /* VMM PML4 */
 .global vmm_pml4
 vmm_pml4:
@@ -47,12 +52,16 @@ vmm_stack_init:
 	/* Jump back to the caller */
 	jmp *%rax
 
-/* VMM guest execute loop */
+/*
+ * VMM guest execute loop
+ */
 .global vmm_run_guest
 vmm_run_guest:
 	/* We never return, so might as well own the whole VMM stack */
 	mov $vmm_stack_top, %rsp
 
+	/* Move boot_params into place */
+	mov %rcx, %rsi
 1:
 	/* Start the VM */
 	movq $vmcb, %rax
@@ -77,9 +86,9 @@ vmm_run_guest:
 	movq %rsp, %rcx /* Pointer to the register save area */
 
 	/* WARN: Allocate shadow space, otherwise gcc fucks up the stack */
-	sub $32, %rsp
+	sub $0x20, %rsp
 	call vmexit_handler
-	add $32, %rsp
+	add $0x20, %rsp
 
 	pop %rbx
 	pop %rcx
@@ -97,14 +106,3 @@ vmm_run_guest:
 	pop %r15
 
 	jmp 1b
-
-/* Self modifying code ;) */
-.global guest_entry
-guest_entry:
-	.global ge_kernel_addr
-	ge_kernel_addr:
-	movq $0xdeadbeefdeadbeef, %rax /* kernel_addr */
-	.global ge_boot_params
-	ge_boot_params:
-	movq $0xdeadbeefdeadbeef, %rsi /* boot_params */
-	jmp *%rax

@@ -13,8 +13,8 @@ boot_linux(
 
 #define KERNEL	L"\\efi\\grr\\vmlinuz-4.19.0-10-amd64"
 #define INITRD	L"\\efi\\grr\\initrd.img-4.19.0-10-amd64"
-#define CMDLINE	"earlyprintk=serial,ttyS0,38400,keep " \
-	"root=UUID=b2e1c499-2f97-4f0b-a3a6-d356dab64705 ro"
+#define CMDLINE	"root=UUID=b2e1c499-2f97-4f0b-a3a6-d356dab64705 ro"
+
 
 efi_status
 efiapi

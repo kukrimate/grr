@@ -73,23 +73,20 @@ struct vmcb vmcb;
 /*
  * Host save state
  */
-static
-uint8_t host_save_state[4096] __attribute__((aligned(4096)));
+extern
+void host_save_state();
+
+
+/*
+ * Assembly VMM entry point
+ */
+void
+vmm_run_guest(void *boot_params);
 
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
 
 #define MSR_VM_HSAVE_PA	0xC0010117
-
-void guest_entry();
-void ge_kernel_addr();
-void ge_boot_params();
-
-#define VMEXIT_CPUID	0x72
-#define VMEXIT_VMRUN	0x80
-
-void
-vmm_run_guest();
 
 void
 vmm_startup(void *linux_entry, void *boot_params)
@@ -103,8 +100,12 @@ vmm_startup(void *linux_entry, void *boot_params)
 	efer = rdmsr(MSR_EFER);
 	wrmsr(MSR_EFER, efer | EFER_SVME);
 
-	/* Load host save state */
-	uart_print("Host save state at: %p\n", host_save_state);
+	uart_print("VMCB at:\t\t%p\n", &vmcb);
+	uart_print("Host save state at:\t%p\n", host_save_state);
+	uart_print("Guest entry point:\t%p\n", linux_entry);
+	uart_print("Guest boot_params:\t%p\n", boot_params);
+
+	/* Set host save state address */
 	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) host_save_state);
 
 	/* Setup VMCB */
@@ -133,37 +134,18 @@ vmm_startup(void *linux_entry, void *boot_params)
 	vmcb.cr4 = read_cr4();
 	vmcb.efer = rdmsr(MSR_EFER) & ~EFER_SVME;
 
-	*(uint64_t *) (ge_kernel_addr + 2) = (uint64_t) linux_entry;
-	*(uint64_t *) (ge_boot_params + 2) = (uint64_t) boot_params;
-
-	vmcb.rip = (uint64_t) guest_entry;
-	uart_print("Guest entry point: %p\n", guest_entry);
+	vmcb.rip = (uint64_t) linux_entry;
 
 	/* Start the guest */
-	uart_print("VMCB at: %p\n", &vmcb);
 	uart_print("Starting guest...\n");
 
 	vmm_load_gdt();
 	vmm_switchpg();
-	vmm_run_guest();
+	vmm_run_guest(boot_params);
 }
 
-struct gpr_save {
-	u64 rbx;
-	u64 rcx;
-	u64 rdx;
-	u64 rsi;
-	u64 rdi;
-	u64 rbp;
-	u64 r8;
-	u64 r9;
-	u64 r10;
-	u64 r11;
-	u64 r12;
-	u64 r13;
-	u64 r14;
-	u64 r15;
-} __attribute__((packed));
+#define VMEXIT_CPUID	0x72
+#define VMEXIT_VMRUN	0x80
 
 void
 vmexit_handler(struct gpr_save *gprs)
