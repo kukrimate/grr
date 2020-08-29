@@ -23,13 +23,11 @@ gdt[] = {
 /*
  * VMCB
  */
-static
 struct vmcb vmcb;
 
 /*
  * Host save state
  */
-static
 uint8_t host_save_state[4096] __attribute__((aligned(4096)));
 
 #define MSR_EFER	0xC0000080
@@ -40,6 +38,12 @@ uint8_t host_save_state[4096] __attribute__((aligned(4096)));
 void guest_entry();
 void ge_kernel_addr();
 void ge_boot_params();
+
+#define VMEXIT_CPUID	0x72
+#define VMEXIT_VMRUN	0x80
+
+void
+vmm_run_guest();
 
 void
 vmm_startup(void *linux_entry, void *boot_params)
@@ -60,6 +64,7 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Setup VMCB */
 	vmcb.guest_asid = 1;
 	vmcb.vmrun = 1;
+	// vmcb.cpuid = 1;
 
 	vmcb.gdtr_limit = sizeof(gdt);
 	vmcb.gdtr_base = (uint64_t) gdt;
@@ -96,14 +101,39 @@ vmm_startup(void *linux_entry, void *boot_params)
 	/* Start the guest */
 	uart_print("VMCB at: %p\n", &vmcb);
 	uart_print("Starting guest...\n");
+	vmm_run_guest();
+}
 
-	for (;;) {
-		asm volatile (
-			"movq %0, %%rax\n"
-			"vmrun"
-			:: "g" (&vmcb) : "rax");
+struct gpr_save {
+	u64 rbx;
+	u64 rcx;
+	u64 rdx;
+	u64 rsi;
+	u64 rdi;
+	u64 rbp;
+	u64 r8;
+	u64 r9;
+	u64 r10;
+	u64 r11;
+	u64 r12;
+	u64 r13;
+	u64 r14;
+	u64 r15;
+};
 
+void
+vmexit_handler(struct gpr_save *gprs)
+{
+	uart_print("#VMEXIT(0x%x)\n", vmcb.exitcode);
+	uart_print("Exitinfo: %x %x\n", vmcb.exitinfo1, vmcb.exitinfo2);
+	// for (;;)
+	// 	;
 
-		uart_print("#VMEXIT(%d)\n", vmcb.exitcode);
+	switch (vmcb.exitcode) {
+	case VMEXIT_CPUID:
+		uart_print("cpuid rax=%p\n", vmcb.rax);
+		break;
+	case VMEXIT_VMRUN:	/* The guest is not allowed this */
+		break;
 	}
 }
