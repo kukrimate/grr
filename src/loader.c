@@ -303,9 +303,6 @@ get_file_size(efi_file_protocol *file, efi_size *file_size)
 }
 
 void
-vmm_init(void);
-
-void
 vmm_startup(void *linux_entry, void *boot_params);
 
 efi_status
@@ -468,7 +465,6 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 		return status;
 
 	/* Call the VMM which will start the kernel in guest mode */
-	vmm_init();
 	vmm_startup(kernel_base + 0x200, boot_params);
 
 err_free_initrd:

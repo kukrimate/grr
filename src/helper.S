@@ -52,9 +52,15 @@ vmm_idtr:
 
 .section .text
 
-/* Switch to the VMM stack */
-.global vmm_init
-vmm_init:
+/* Start of the VMM */
+.global vmm_startup
+vmm_startup:
+	/* Switch stacks */
+	movq $vmm_stack_top, %rsp
+
+	push %rcx	/* Entry point */
+	push %rdx	/* Boot params */
+
 	/* Load the VMM's GDT */
 	lgdt vmm_gdtr
 	pushq $0x08
@@ -71,29 +77,22 @@ reload_cs:
 	/* Load the VMM's IDT */
 	lidt vmm_idtr
 
-	/* Move the return address into RAX */
-	movq (%rsp), %rax
-	/* Switch stacks */
-	movq $vmm_stack_top, %rsp
-	/* Jump back to the caller */
-	jmp *%rax
+	/* Call C intialization code */
+	movq $vmcb, %rcx
+	sub $0x20, %rsp
+	call vmm_setup
+	add $0x20, %rsp
 
-/*
- * VMM guest execute loop
- */
-.global vmm_run_guest
-vmm_run_guest:
-	/* We never return, so might as well own the whole VMM stack */
-	mov $vmm_stack_top, %rsp
-
-	/* Move boot_params into place */
-	mov %rcx, %rsi
+	/* Guest parameters */
+	pop %rsi
+	pop %rax
+	movq %rax, vmcb + 0x578
 1:
 	/* Start the VM */
 	movq $vmcb, %rax
 	vmrun
 
-	/* We've got a #VMEXIT */
+	/* VMEXIT entry point */
 	push %r15
 	push %r14
 	push %r13
@@ -109,9 +108,9 @@ vmm_run_guest:
 	push %rcx
 	push %rbx
 
-	movq %rsp, %rcx /* Pointer to the register save area */
-
-	/* WARN: Allocate shadow space, otherwise gcc fucks up the stack */
+	/* Do the actual work in C */
+	movq $vmcb, %rcx
+	movq %rsp, %rdx
 	sub $0x20, %rsp
 	call vmexit_handler
 	add $0x20, %rsp

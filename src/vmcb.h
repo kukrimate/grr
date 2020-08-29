@@ -243,9 +243,9 @@ struct vmcb {
 } __attribute__((packed)) __attribute__ ((aligned (4096)));
 
 /*
- * General purpose register save area
+ * General purpose registers
  */
-struct gpr_save {
+struct gprs {
 	u64 rbx;
 	u64 rcx;
 	u64 rdx;
