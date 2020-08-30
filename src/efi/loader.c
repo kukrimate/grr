@@ -92,8 +92,11 @@ retry:
 	for (mmap_ent = mmap; (void *) mmap_ent < mmap + mmap_size;
 				mmap_ent = (void *) mmap_ent + desc_size) {
 		/* Make sure the kernel won't trash us */
-		if (mmap_ent->start == (efi_size) loaded_image->image_base)
-			mmap_ent->type = efi_runtime_services_code;
+		if (mmap_ent->start == (efi_size) loaded_image->image_base) {
+			--boot_params->e820_entries;
+			continue;
+
+		}
 
 		e820_cur->addr = mmap_ent->start;
 		e820_cur->size = mmap_ent->number_of_pages * PAGE_SIZE;
