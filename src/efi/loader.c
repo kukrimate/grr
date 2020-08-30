@@ -5,7 +5,7 @@
 #include <efi.h>
 #include <efiutil.h>
 #include <khelper.h>
-#include "../bootparam.h"
+#include <include/bootparam.h>
 
 #define PAGE_SIZE 4096
 #define PAGE_COUNT(x) ((x + PAGE_SIZE - 1) / PAGE_SIZE)
@@ -295,7 +295,7 @@ get_file_size(efi_file_protocol *file, efi_size *file_size)
 }
 
 void
-kernel_main(void *kernel_entry, struct boot_params *boot_params);
+kernel_init(void *kernel_entry, struct boot_params *boot_params);
 
 efi_status
 boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
@@ -457,7 +457,7 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 		return status;
 
 	/* Call the VMM's kernel to start Linux as a guest */
-	kernel_main(kernel_base + 0x200, boot_params);
+	kernel_init(kernel_base + 0x200, boot_params);
 
 err_free_initrd:
 	bs->free_pages((efi_physical_address) initrd_base,

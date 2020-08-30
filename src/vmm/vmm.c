@@ -5,9 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <khelper.h>
+#include <include/x86.h>
 #include "vmcb.h"
-#include "uart.h"
-#include "x86.h"
 
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
@@ -53,10 +52,10 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 {
 	uint64_t rax, rbx, rcx, rdx;
 
-	uart_print("#VMEXIT(0x%x)\n", vmcb->exitcode);
+	// uart_print("#VMEXIT(0x%x)\n", vmcb->exitcode);
 	switch (vmcb->exitcode) {
 	case VMEXIT_CPUID:
-		uart_print("CPUID EAX=%x\n", vmcb->rax);
+		// uart_print("CPUID EAX=%x\n", vmcb->rax);
 
 		rax = vmcb->rax;
 		asm volatile (

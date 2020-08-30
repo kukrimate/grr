@@ -14,6 +14,12 @@ extern
 uint64_t *kernel_pml4;
 
 /*
+ * Load the kernel GDT, used by the SMP setup code
+ */
+void
+kernel_segm_init(void);
+
+/*
  * Big kernel lock, its terrible, but also very easy
  */
 void

@@ -4,8 +4,8 @@
 
 #include <stdint.h>
 #include <stdarg.h>
+#include <include/x86.h>
 #include "uart.h"
-#include "x86.h"
 
 /* UART registers */
 enum {

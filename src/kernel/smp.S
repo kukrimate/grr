@@ -2,6 +2,13 @@
  * SMP initialization trampoline
  */
 
+/* Call MS ABI functions */
+.macro mscall func
+sub $0x20, %rsp
+call \func
+add $0x20, %rsp
+.endm
+
 .section .data
 
 /*
@@ -105,7 +112,7 @@ smp_init64_rsp:
 movq $0xdeadbeefdeadbeef, %rsp
 
 /* Call into C code */
-call acpi_smp_ap_entry
+mscall acpi_smp_ap_entry
 
 /* This should never be reached */
 1: hlt

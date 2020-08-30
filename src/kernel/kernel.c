@@ -4,10 +4,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <include/bootparam.h>
 #include "acpi.h"
 #include "uart.h"
-#include "vmm.h"
-#include "../bootparam.h"
 
 /*
  * Low memory (<1MiB) allocator
@@ -82,10 +81,46 @@ pginit(void)
 }
 
 /*
+ * Segmentation setup code
+ */
+
+static
+uint64_t
+gdt[] = {
+	0,
+	0x00209A0000000000,	/* __BOOT_CS */
+	0x0000920000000000,	/* __BOOT_DS */
+};
+
+void
+kernel_segm_init(void)
+{
+	struct {
+		uint16_t limit;
+		uint64_t addr;
+	} __attribute__((packed)) gdtr;
+
+	gdtr.limit = sizeof(gdt);
+	gdtr.addr = (uint64_t) gdt;
+
+	asm volatile ("lgdt %0\n"
+			"pushq $0x08\n"
+			"pushq $reload_cs\n"
+			"retfq; reload_cs:\n"
+			"movl $0x10, %%eax\n"
+			"movl %%eax, %%ds\n"
+			"movl %%eax, %%es\n"
+			"movl %%eax, %%ss\n"
+			"movl %%eax, %%fs\n"
+			"movl %%eax, %%gs"
+			 :: "m" (gdtr) : "rax");
+}
+
+/*
  * Locking code
  */
 
-// static
+static
 int bkl = 0;
 
 void
@@ -101,6 +136,9 @@ kernel_bkl_release(void)
 }
 
 void
+vmm_startup(void *kernel_entry, void *boot_params);
+
+void
 kernel_main(void *kernel_entry, struct boot_params *boot_params)
 {
 	/* Setup UART so we can print stuff */
@@ -114,12 +152,16 @@ kernel_main(void *kernel_entry, struct boot_params *boot_params)
 	pginit();
 	uart_print("Kernel PML4: %p\n", kernel_pml4);
 
+	/* Use our own GDT */
+	kernel_segm_init();
+	uart_print("Kernel GDT loaded!\n");
+
 	/* SMP init depends on lowmem + page table */
 	kernel_bkl_acquire();
 	acpi_smp_init((acpi_rsdp *) boot_params->acpi_rsdp_addr);
 
 	/* Start the kernel in the VMM */
-	// vmm_startup(kernel_entry, boot_params);
+	vmm_startup(kernel_entry, boot_params);
 	for (;;)
 		;
 }

@@ -1,14 +1,17 @@
 include ../tools/Makefile.efi
 
+CFLAGS += -Isrc
+
 APP := hdd/efi/boot/bootx64.efi
 OBJ := src/efi/main.o \
 	src/efi/loader.o \
-	src/vmm/acpi.o \
-	src/vmm/uart.o \
 	src/vmm/helper.o \
 	src/vmm/vmm.o \
-	src/vmm/smp.o \
-	src/vmm/kernel.o
+	src/kernel/acpi.o  \
+	src/kernel/smp.o \
+	src/kernel/uart.o \
+	src/kernel/init.o \
+	src/kernel/kernel.o
 
 all: $(APP)
 

@@ -16,30 +16,7 @@ vmcb:
 host_save_state:
 .skip 4096
 
-/* Stack for the VMM */
-vmm_stack_base:
-.skip 8192
-vmm_stack_top:
-
-/* VMM heap */
-.global vmm_heap
-vmm_heap:
-.skip 0x100000
-.global vmm_heap_end
-vmm_heap_end:
-
 .section .data
-
-/* GDT for the VMM */
-.align 16
-vmm_gdt:
-.quad	0
-.quad	0x00209a0000000000
-.quad	0x0000920000000000
-
-vmm_gdtr:
-.word	vmm_gdtr - vmm_gdt
-.quad	vmm_gdt
 
 /* NULL idtr to get rid of the firmware code */
 .align 16
@@ -59,24 +36,8 @@ add $0x20, %rsp
 /* Start of the VMM */
 .global vmm_startup
 vmm_startup:
-	/* Switch stacks */
-	movq $vmm_stack_top, %rsp
-
 	push %rcx	/* Entry point */
 	push %rdx	/* Boot params */
-
-	/* Load the VMM's GDT */
-	lgdt vmm_gdtr
-	pushq $0x08
-	pushq $1f
-	retfq
-1:
-	movl $0x10, %eax
-	movl %eax, %ds
-	movl %eax, %es
-	movl %eax, %ss
-	movl %eax, %fs
-	movl %eax, %gs
 
 	/* Load the VMM's IDT */
 	lidt vmm_idtr

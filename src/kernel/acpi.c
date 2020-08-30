@@ -112,6 +112,7 @@ acpi_smp_init(acpi_rsdp *rsdp)
 void
 acpi_smp_ap_entry(void)
 {
+	kernel_segm_init();
 	uart_print("AP %d reached C code!\n",
 		*(uint32_t *) (lapic_addr + 0x20) >> 24);
 	kernel_bkl_release();
