@@ -43,10 +43,6 @@ vmm_setup(struct vmcb *vmcb)
 	/* CPUID emulation */
 	vmcb->cpuid = 1;
 
-	/* We want to catch CR3 updates */
-	// vmcb->cr_read = (1 << 3);
-	// vmcb->cr_write = (1 << 3);
-
 	/* FIXME: the current segmentation setup has no GDT backing it,
 		only hidden segmnet registers are set up, but Linux loads its
 		own so we don't care for now */
@@ -66,7 +62,7 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->cr0 = read_cr0();
 	vmcb->cr3 = read_cr3();
 	vmcb->cr4 = read_cr4();
-	vmcb->efer = rdmsr(MSR_EFER) & ~EFER_SVME;
+	vmcb->efer = rdmsr(MSR_EFER);
 }
 
 static
@@ -181,18 +177,9 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 	guest_rip = (uint8_t *) vmcb->rip;
 
 	switch (vmcb->exitcode) {
-	case VMEXIT_CR3_RD:
-		// uart_print("CR3 read to %d\n", vmcb->exitinfo1 & 0xf);
-		write_guest_gpr(vmcb, gprs, vmcb->exitinfo1 & 0xf, vmcb->cr3);
-		vmcb->rip += 3; /* FIXME: this is not always 3 bytes */
-		break;
-	case VMEXIT_CR3_WR:
-		// uart_print("CR3 write from %d\n", vmcb->exitinfo1 & 0xf);
-		vmcb->cr3 = read_guest_gpr(vmcb, gprs, vmcb->exitinfo1 & 0xf);
-		vmcb->rip += 3; /* FIXME: this is not always 3 bytes */
-		break;
 	case VMEXIT_CPUID:
-		uart_print("CPUID EAX=%x\n", vmcb->rax);
+		uart_print("[%d] CPUID EAX=%x\n",
+			acpi_get_apic_id(), vmcb->rax);
 
 		rax = vmcb->rax;
 		asm volatile (
@@ -220,7 +207,7 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 		vmcb->rip += 2;
 		break;
 	case VMEXIT_VMRUN:	/* The guest is not allowed this */
-		uart_print("VMRUN\n");
+		uart_print("[%d] VMRUN\n", acpi_get_apic_id());
 		break;
 	default:
 		uart_print("[%d] Unknown #VMEXIT %d\n",
