@@ -5,8 +5,15 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <include/bootparam.h>
+#include <vmm/vmm.h>
 #include "acpi.h"
 #include "uart.h"
+
+/*
+ * Global kernel lock
+ */
+int
+kernel_global_lock = 0;
 
 /*
  * Low memory (<1MiB) allocator
@@ -93,7 +100,7 @@ gdt[] = {
 };
 
 void
-kernel_segm_init(void)
+kernel_core_init(void)
 {
 	struct {
 		uint16_t limit;
@@ -114,32 +121,18 @@ kernel_segm_init(void)
 			"movl %%eax, %%fs\n"
 			"movl %%eax, %%gs"
 			 :: "m" (gdtr) : "rax");
+
+	gdtr.limit = 0;
+	gdtr.addr = 0;
+
+	asm volatile ("lidt %0\n" :: "m" (gdtr));
 }
 
 /*
- * Locking code
+ * Kernel entry point
  */
-
-static
-int bkl = 0;
-
 void
-kernel_bkl_acquire(void)
-{
-	asm volatile ("1: lock btsl $0, %0; jc 1b" : "=m" (bkl));
-}
-
-void
-kernel_bkl_release(void)
-{
-	asm volatile ("lock btrl $0, %0" : "=m" (bkl));
-}
-
-void
-vmm_startup(void *kernel_entry, void *boot_params);
-
-void
-kernel_main(void *kernel_entry, struct boot_params *boot_params)
+kernel_main(void *linux_entry, struct boot_params *boot_params)
 {
 	/* Setup UART so we can print stuff */
 	uart_setup();
@@ -153,15 +146,13 @@ kernel_main(void *kernel_entry, struct boot_params *boot_params)
 	uart_print("Kernel PML4: %p\n", kernel_pml4);
 
 	/* Use our own GDT */
-	kernel_segm_init();
-	uart_print("Kernel GDT loaded!\n");
+	kernel_core_init();
+	uart_print("Kernel GDT and IDT loaded!\n");
 
 	/* SMP init depends on lowmem + page table */
-	kernel_bkl_acquire();
 	acpi_smp_init((acpi_rsdp *) boot_params->acpi_rsdp_addr);
 
-	/* Start the kernel in the VMM */
-	vmm_startup(kernel_entry, boot_params);
-	for (;;)
-		;
+	/* Start Linux in the VMM */
+	uart_print("Calling BSP VMM startup!\n");
+	vmm_startup_bsp(vmm_setup_core(), linux_entry, boot_params);
 }

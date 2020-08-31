@@ -298,7 +298,7 @@ get_file_size(efi_file_protocol *file, efi_size *file_size)
 }
 
 void
-kernel_init(void *kernel_entry, struct boot_params *boot_params);
+kernel_init(void *linux_entry, struct boot_params *boot_params);
 
 efi_status
 boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)

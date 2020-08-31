@@ -1,6 +1,8 @@
 include ../tools/Makefile.efi
 
-CFLAGS += -Isrc
+CFLAGS += -Isrc -Wall \
+	-Wno-missing-braces -Wno-unused-function \
+	-Wno-unused-variable -Wno-unused-but-set-variable
 
 APP := hdd/efi/boot/bootx64.efi
 OBJ := src/efi/main.o \

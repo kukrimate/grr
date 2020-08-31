@@ -6,21 +6,49 @@
 #include <stdint.h>
 #include <khelper.h>
 #include <include/x86.h>
+#include <kernel/uart.h>
+#include <kernel/kernel.h>
 #include "vmcb.h"
+
+#define MSR_VM_CR	0xC0010114
+
+#define MSR_VM_HSAVE_PA	0xC0010117
 
 #define MSR_EFER	0xC0000080
 # define EFER_SVME	(1 << 12)
 
-void
-vmm_setup(struct vmcb *vmcb)
+struct vmcb *
+vmm_setup_core(void)
 {
 	/* Enable SVM */
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SVME);
 
+	wrmsr(MSR_VM_CR, (1 << 1));
+	uart_print("VM_CR: %p\n", rdmsr(MSR_VM_CR));
+
+	/* Allocate and configure host save state */
+	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) kernel_lowmem_alloc(1));
+	/* Allocate VMCB */
+	return kernel_lowmem_alloc(1);
+}
+
+void
+vmm_setup(struct vmcb *vmcb)
+{
 	/* Setup VMCB */
 	vmcb->guest_asid = 1;
 	vmcb->vmrun = 1;
+
+	/* Catch INIT so we can start APs in Linux */
+	vmcb->init = 1;
+	vmcb->shutdown = 1;
+
+	/* CPUID emulation */
 	vmcb->cpuid = 1;
+
+	/* We want to catch CR3 updates */
+	// vmcb->cr_read = (1 << 3);
+	// vmcb->cr_write = (1 << 3);
 
 	/* FIXME: the current segmentation setup has no GDT backing it,
 		only hidden segmnet registers are set up, but Linux loads its
@@ -44,18 +72,130 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->efer = rdmsr(MSR_EFER) & ~EFER_SVME;
 }
 
+static
+uint64_t
+read_guest_gpr(struct vmcb *vmcb, struct gprs *gprs, int idx)
+{
+	switch (idx) {
+	case 0:
+		return vmcb->rax;
+	case 1:
+		return gprs->rcx;
+	case 2:
+		return gprs->rdx;
+	case 3:
+		return gprs->rbx;
+	case 4:
+		return vmcb->rsp;
+	case 5:
+		return gprs->rbp;
+	case 6:
+		return gprs->rsi;
+	case 7:
+		return gprs->rdi;
+	case 8:
+		return gprs->r8;
+	case 9:
+		return gprs->r9;
+	case 0xa:
+		return gprs->r10;
+	case 0xb:
+		return gprs->r11;
+	case 0xc:
+		return gprs->r12;
+	case 0xd:
+		return gprs->r13;
+	case 0xe:
+		return gprs->r14;
+	case 0xf:
+		return gprs->r15;
+	default: /* Bad idx */
+		return 0;
+	}
+}
+
+static
+void
+write_guest_gpr(struct vmcb *vmcb, struct gprs *gprs, int idx, uint64_t val)
+{
+	switch (idx) {
+	case 0:
+		vmcb->rax = val;
+		break;
+	case 1:
+		gprs->rcx = val;
+		break;
+	case 2:
+		gprs->rdx = val;
+		break;
+	case 3:
+		gprs->rbx = val;
+		break;
+	case 4:
+		vmcb->rsp = val;
+		break;
+	case 5:
+		gprs->rbp = val;
+		break;
+	case 6:
+		gprs->rsi = val;
+		break;
+	case 7:
+		gprs->rdi = val;
+		break;
+	case 8:
+		gprs->r8 = val;
+		break;
+	case 9:
+		gprs->r9 = val;
+		break;
+	case 0xa:
+		gprs->r10 = val;
+		break;
+	case 0xb:
+		gprs->r11 = val;
+		break;
+	case 0xc:
+		gprs->r12 = val;
+		break;
+	case 0xd:
+		gprs->r13 = val;
+		break;
+	case 0xe:
+		gprs->r14 = val;
+		break;
+	case 0xf:
+		gprs->r15 = val;
+		break;
+	}
+}
+
+#define VMEXIT_CR3_RD	0x03
+#define VMEXIT_CR3_WR	0x13
 #define VMEXIT_CPUID	0x72
 #define VMEXIT_VMRUN	0x80
 
 void
 vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 {
+	uint8_t *guest_rip;
 	uint64_t rax, rbx, rcx, rdx;
 
-	// uart_print("#VMEXIT(0x%x)\n", vmcb->exitcode);
+	guest_rip = (uint8_t *) vmcb->rip;
+
 	switch (vmcb->exitcode) {
+	case VMEXIT_CR3_RD:
+		// uart_print("CR3 read to %d\n", vmcb->exitinfo1 & 0xf);
+		write_guest_gpr(vmcb, gprs, vmcb->exitinfo1 & 0xf, vmcb->cr3);
+		vmcb->rip += 3; /* FIXME: this is not always 3 bytes */
+		break;
+	case VMEXIT_CR3_WR:
+		// uart_print("CR3 write from %d\n", vmcb->exitinfo1 & 0xf);
+		vmcb->cr3 = read_guest_gpr(vmcb, gprs, vmcb->exitinfo1 & 0xf);
+		vmcb->rip += 3; /* FIXME: this is not always 3 bytes */
+		break;
 	case VMEXIT_CPUID:
-		// uart_print("CPUID EAX=%x\n", vmcb->rax);
+		uart_print("CPUID EAX=%x\n", vmcb->rax);
 
 		rax = vmcb->rax;
 		asm volatile (
@@ -83,6 +223,12 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 		vmcb->rip += 2;
 		break;
 	case VMEXIT_VMRUN:	/* The guest is not allowed this */
+		uart_print("VMRUN\n");
+		break;
+	default:
+		uart_print("Unknown #VMEXIT %d\n", vmcb->exitcode);
+		for (;;)
+			;
 		break;
 	}
 }

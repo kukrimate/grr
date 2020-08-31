@@ -2,28 +2,6 @@
  * Assembly helpers
  */
 
-.section .bss
-
-.align 4096
-
-/* VMCB */
-.global vmcb
-vmcb:
-.skip 4096
-
-/* VMM host save state */
-.global host_save_state
-host_save_state:
-.skip 4096
-
-.section .data
-
-/* NULL idtr to get rid of the firmware code */
-.align 16
-vmm_idtr:
-.word	0
-.quad	0
-
 /* Call MS ABI functions */
 .macro mscall func
 sub $0x20, %rsp
@@ -33,35 +11,55 @@ add $0x20, %rsp
 
 .section .text
 
-/* Start of the VMM */
-.global vmm_startup
-vmm_startup:
-	push %rcx	/* Entry point */
-	push %rdx	/* Boot params */
-
-	/* Load the VMM's IDT */
-	lidt vmm_idtr
+/* Start the BSP VMM */
+.global vmm_startup_bsp
+vmm_startup_bsp:
+	push %rcx	/* VMCB */
+	push %rdx	/* Entry point */
+	push %r8	/* Boot params */
 
 	/* Setup VMCB */
-	movq $vmcb, %rcx
 	mscall vmm_setup
 
-	/* Setup Host save state */
-	movl $0xC0010117, %ecx	/* MSR_VM_HSAVE_PA */
-	xorl %edx, %edx	/* FIXME: this only works if we're linked under 4G */
-	movl $host_save_state, %eax
-	wrmsr
-
-	/* Guest parameters */
+	/* Boot params go into RSI */
 	pop %rsi
+
+	/* Set guest entry point to linux_entry */
 	pop %rax
-	movq %rax, vmcb + 0x578
-2:
+	movq 0(%rsp), %rcx
+	movq %rax, 0x578(%rcx)
+
+	jmp vmm_execute
+
+ap_guest_entry:
+1:	jmp 1b
+
+/* Start an AP VMM */
+.global vmm_startup_ap
+vmm_startup_ap:
+	push %rcx	/* VMCB */
+
+	/* Setup VMCB */
+	mscall vmm_setup
+
+	/* Make AP guest wait for SIPI from the BSP */
+	movq 0(%rsp), %rcx
+	movq $ap_guest_entry, 0x578(%rcx)
+
+/* VMM execute loop */
+vmm_execute:
+	/* Release lock before starting guest */
+	lock btrl $0, kernel_global_lock
+
 	/* Start the VM */
-	movq $vmcb, %rax
+	movq 0(%rsp), %rax
 	vmload
 	vmrun
 	vmsave
+
+	/* Acquire lock on VMEXIT */
+1:	lock btsl $0, kernel_global_lock
+	jc 1b
 
 	/* VMEXIT entry point */
 	push %r15
@@ -80,7 +78,7 @@ vmm_startup:
 	push %rbx
 
 	/* Do the actual work in C */
-	movq $vmcb, %rcx
+	movq 112(%rsp), %rcx
 	movq %rsp, %rdx
 	mscall vmexit_handler
 
@@ -99,4 +97,4 @@ vmm_startup:
 	pop %r14
 	pop %r15
 
-	jmp 2b
+	jmp vmm_execute

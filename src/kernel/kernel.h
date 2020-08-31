@@ -2,6 +2,21 @@
 #define KERNEL_H
 
 /*
+ * Simple spinlock
+ */
+
+#define spinlock_lock(x) \
+	asm volatile ("1: lock btsl $0, %0; jc 1b" : "=m" (x))
+#define spinlock_unlock(x) \
+	asm volatile ("lock btrl $0, %0" : "=m" (x))
+
+/*
+ * Global kernel lock
+ */
+extern
+int kernel_global_lock;
+
+/*
  * Kernel lowmem allocator
  */
 void *
@@ -14,18 +29,9 @@ extern
 uint64_t *kernel_pml4;
 
 /*
- * Load the kernel GDT, used by the SMP setup code
+ * Load the kernel GDT and IDT, used by the SMP setup code
  */
 void
-kernel_segm_init(void);
-
-/*
- * Big kernel lock, its terrible, but also very easy
- */
-void
-kernel_bkl_acquire(void);
-
-void
-kernel_bkl_release(void);
+kernel_core_init(void);
 
 #endif

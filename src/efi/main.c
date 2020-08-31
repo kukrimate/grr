@@ -16,7 +16,7 @@ boot_linux(
 #define CMDLINE	"root=UUID=b2e1c499-2f97-4f0b-a3a6-d356dab64705 ro"
 
 
-efi_status
+void
 efiapi
 efi_main(efi_handle image_handle, efi_system_table *system_table)
 {

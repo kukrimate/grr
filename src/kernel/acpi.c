@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <khelper.h>
+#include <vmm/vmm.h>
 #include "acpi.h"
 #include "kernel.h"
 #include "uart.h"
@@ -84,6 +85,9 @@ acpi_smp_init(acpi_rsdp *rsdp)
 			*(uint64_t *) (smp_init64_rsp + 2) =
 				(uint64_t) kernel_lowmem_alloc(1) + 4096;
 
+			/* Lock on behalf of the AP */
+			kernel_global_lock = 1;
+
 			/* Init IPI */
 			*(uint32_t *) (lapic_addr + 0x310) =
 				(madt_entry->lapic.apic_id << 24);
@@ -95,8 +99,8 @@ acpi_smp_init(acpi_rsdp *rsdp)
 			*(uint32_t *) (lapic_addr + 0x300) =
 				0x00004600 | ((uint64_t) trampoline / 4096);
 
-			/* Wait for the AP to come up */
-			kernel_bkl_acquire();
+			/* Wait for the newly started AP to finish */
+			spinlock_lock(kernel_global_lock);
 		}
 
 		len -= madt_entry->length;
@@ -112,8 +116,9 @@ acpi_smp_init(acpi_rsdp *rsdp)
 void
 acpi_smp_ap_entry(void)
 {
-	kernel_segm_init();
+	kernel_core_init();
 	uart_print("AP %d reached C code!\n",
 		*(uint32_t *) (lapic_addr + 0x20) >> 24);
-	kernel_bkl_release();
+	uart_print("Calling AP VMM startup!\n");
+	vmm_startup_ap(vmm_setup_core());
 }
