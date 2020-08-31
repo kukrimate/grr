@@ -32,7 +32,7 @@ static
 void
 lowmem_init(struct boot_params *boot_params)
 {
-	size_t i;
+	size_t i, align;
 
 	for (i = 0; i < boot_params->e820_entries; ++i)
 		if (!lowmem_base && boot_params->e820_table[i].type == E820_USABLE
@@ -42,6 +42,13 @@ lowmem_init(struct boot_params *boot_params)
 				boot_params->e820_table[i].size;
 			lowmem_size = boot_params->e820_table[i].size;
 		}
+
+	align = (uint64_t) lowmem_base % 4096;
+	if (align) {
+		align = 4096 - align;
+		lowmem_base += align;
+		lowmem_size -= align;
+	}
 
 	uart_print("Hypervisor lowmem: %p-%p\n",
 		lowmem_base, lowmem_base + lowmem_size - 1);
@@ -125,7 +132,7 @@ kernel_core_init(void)
 	gdtr.limit = 0;
 	gdtr.addr = 0;
 
-	asm volatile ("lidt %0\n" :: "m" (gdtr));
+	asm volatile ("lidt %0" :: "m" (gdtr));
 }
 
 /*

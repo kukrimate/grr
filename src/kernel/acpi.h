@@ -68,4 +68,7 @@ typedef struct {
 void
 acpi_smp_init(acpi_rsdp *rsdp);
 
+int
+acpi_get_apic_id(void);
+
 #endif

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <khelper.h>
 #include <include/x86.h>
+#include <kernel/acpi.h>
 #include <kernel/uart.h>
 #include <kernel/kernel.h>
 #include "vmcb.h"
@@ -22,10 +23,6 @@ vmm_setup_core(void)
 {
 	/* Enable SVM */
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SVME);
-
-	wrmsr(MSR_VM_CR, (1 << 1));
-	uart_print("VM_CR: %p\n", rdmsr(MSR_VM_CR));
-
 	/* Allocate and configure host save state */
 	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) kernel_lowmem_alloc(1));
 	/* Allocate VMCB */
@@ -40,8 +37,8 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->vmrun = 1;
 
 	/* Catch INIT so we can start APs in Linux */
-	vmcb->init = 1;
-	vmcb->shutdown = 1;
+	// vmcb->init = 1;
+	// vmcb->shutdown = 1;
 
 	/* CPUID emulation */
 	vmcb->cpuid = 1;
@@ -226,7 +223,8 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 		uart_print("VMRUN\n");
 		break;
 	default:
-		uart_print("Unknown #VMEXIT %d\n", vmcb->exitcode);
+		uart_print("[%d] Unknown #VMEXIT %d\n",
+			acpi_get_apic_id(), vmcb->exitcode);
 		for (;;)
 			;
 		break;

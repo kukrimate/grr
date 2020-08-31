@@ -76,7 +76,9 @@ acpi_smp_init(acpi_rsdp *rsdp)
 	madt_entry = madt->entries;
 	while (len) {
 		/* Look for LAPIC entries */
-		if (!madt_entry->type && madt_entry->lapic.apic_id) {
+		if (!madt_entry->type &&
+				madt_entry->lapic.apic_id
+				!= *(uint32_t *) (lapic_addr + 0x20) >> 24) {
 			uart_print("Waking up CPU: %d, APIC: %d\n",
 				madt_entry->lapic.cpu_id,
 				madt_entry->lapic.apic_id);
@@ -108,6 +110,12 @@ acpi_smp_init(acpi_rsdp *rsdp)
 	}
 
 	uart_print("SMP setup done!\n");
+}
+
+int
+acpi_get_apic_id(void)
+{
+	return  *(uint32_t *) (lapic_addr + 0x20) >> 24;
 }
 
 /*
