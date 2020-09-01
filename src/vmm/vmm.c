@@ -12,6 +12,7 @@
 #include "vmcb.h"
 
 #define MSR_VM_CR	0xC0010114
+# define VM_CR_R_INIT	(1 << 1)
 
 #define MSR_VM_HSAVE_PA	0xC0010117
 
@@ -23,8 +24,13 @@ vmm_setup_core(void)
 {
 	/* Enable SVM */
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SVME);
+
+	/* Get exception on INIT */
+	wrmsr(MSR_VM_CR, rdmsr(MSR_VM_CR) | VM_CR_R_INIT);
+
 	/* Allocate and configure host save state */
 	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) kernel_lowmem_alloc(1));
+
 	/* Allocate VMCB */
 	return kernel_lowmem_alloc(1);
 }
@@ -36,9 +42,8 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->guest_asid = 1;
 	vmcb->vmrun = 1;
 
-	/* Catch INIT so we can start APs in Linux */
-	// vmcb->init = 1;
-	// vmcb->shutdown = 1;
+	/* Intercept SX exception */
+	vmcb->exception = (1 << 30);
 
 	/* CPUID emulation */
 	vmcb->cpuid = 1;
@@ -163,8 +168,7 @@ write_guest_gpr(struct vmcb *vmcb, struct gprs *gprs, int idx, uint64_t val)
 	}
 }
 
-#define VMEXIT_CR3_RD	0x03
-#define VMEXIT_CR3_WR	0x13
+#define VMEXIT_EXP_SX	0x5e
 #define VMEXIT_CPUID	0x72
 #define VMEXIT_VMRUN	0x80
 
@@ -177,6 +181,9 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 	guest_rip = (uint8_t *) vmcb->rip;
 
 	switch (vmcb->exitcode) {
+	case VMEXIT_EXP_SX:
+		uart_print("[%d] INIT caught\n", acpi_get_apic_id());
+		break;
 	case VMEXIT_CPUID:
 		uart_print("[%d] CPUID EAX=%x\n",
 			acpi_get_apic_id(), vmcb->rax);
@@ -205,9 +212,6 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 		}
 
 		vmcb->rip += 2;
-		break;
-	case VMEXIT_VMRUN:	/* The guest is not allowed this */
-		uart_print("[%d] VMRUN\n", acpi_get_apic_id());
 		break;
 	default:
 		uart_print("[%d] Unknown #VMEXIT %d\n",

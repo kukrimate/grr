@@ -135,6 +135,7 @@ kernel_core_init(void)
 	asm volatile ("lidt %0" :: "m" (gdtr));
 }
 
+
 /*
  * Kernel entry point
  */
