@@ -14,7 +14,7 @@
 /*
  * Use an ANSI terminal
  */
-#define AURT_ANSI
+#define UART_ANSI
 
 /* Intialize the UART to known settings */
 void

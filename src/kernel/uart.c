@@ -39,7 +39,7 @@ uart_setup(void)
 	outb(UART_ADDR + UART_IER, 0);    /* Disable interrupts */
 	outb(UART_ADDR + UART_FCR, 0);    /* Disable FIFO */
 
-#ifdef AURT_ANSI
+#ifdef UART_ANSI
 	/* Do ANSI reset */
 	for (p = "\033[0m"; *p; ++p)
 		uart_write(*p);
