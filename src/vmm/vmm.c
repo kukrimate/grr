@@ -7,8 +7,9 @@
 #include <khelper.h>
 #include <include/x86.h>
 #include <kernel/acpi.h>
-#include <kernel/uart.h>
+#include <kernel/alloc.h>
 #include <kernel/kernel.h>
+#include <kernel/uart.h>
 #include "vmcb.h"
 
 #define MSR_VM_CR	0xC0010114
@@ -29,10 +30,10 @@ vmm_setup_core(void)
 	wrmsr(MSR_VM_CR, rdmsr(MSR_VM_CR) | VM_CR_R_INIT);
 
 	/* Allocate and configure host save state */
-	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) kernel_lowmem_alloc(1));
+	wrmsr(MSR_VM_HSAVE_PA, (uint64_t) alloc_pages(1, 0));
 
 	/* Allocate VMCB */
-	return kernel_lowmem_alloc(1);
+	return alloc_pages(1, 0);
 }
 
 void

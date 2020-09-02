@@ -5,10 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <khelper.h>
+#include <kernel/acpi.h>
+#include <kernel/alloc.h>
+#include <kernel/kernel.h>
+#include <kernel/uart.h>
 #include <vmm/vmm.h>
-#include "acpi.h"
-#include "kernel.h"
-#include "uart.h"
 
 static
 void *
@@ -63,7 +64,7 @@ acpi_smp_init(acpi_rsdp *rsdp)
 
 	uart_print("Setting up SMP...\n");
 
-	trampoline = kernel_lowmem_alloc(1);
+	trampoline = alloc_pages(1, 0xfffff); /* This must be <1M */
 	memcpy(trampoline, smp_init16, smp_init16_end - smp_init16);
 	uart_print("SMP AP trampoline at: %p (Page: %d)\n",
 		trampoline, (uint64_t) trampoline / 4096);
@@ -87,7 +88,7 @@ acpi_smp_init(acpi_rsdp *rsdp)
 
 			/* 4K stack for each AP */
 			*(uint64_t *) (smp_init64_rsp + 2) =
-				(uint64_t) kernel_lowmem_alloc(1) + 4096;
+				(uint64_t) alloc_pages(1, 0) + 4096;
 
 			/* Lock on behalf of the AP */
 			kernel_global_lock = 1;

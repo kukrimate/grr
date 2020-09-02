@@ -17,12 +17,6 @@ extern
 int kernel_global_lock;
 
 /*
- * Kernel lowmem allocator
- */
-void *
-kernel_lowmem_alloc(size_t pages);
-
-/*
  * Kernel root page table, used by the SMP setup code
  */
 extern

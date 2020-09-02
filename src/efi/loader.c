@@ -6,6 +6,7 @@
 #include <efiutil.h>
 #include <khelper.h>
 #include <include/bootparam.h>
+#include <include/handover.h>
 
 #define PAGE_SIZE 4096
 #define PAGE_COUNT(x) ((x + PAGE_SIZE - 1) / PAGE_SIZE)
@@ -92,11 +93,8 @@ retry:
 	for (mmap_ent = mmap; (void *) mmap_ent < mmap + mmap_size;
 				mmap_ent = (void *) mmap_ent + desc_size) {
 		/* Make sure the kernel won't trash us */
-		if (mmap_ent->start == (efi_size) loaded_image->image_base) {
-			--boot_params->e820_entries;
-			continue;
-
-		}
+		if (mmap_ent->start == (efi_size) loaded_image->image_base)
+			mmap_ent->type = efi_runtime_services_code;
 
 		e820_cur->addr = mmap_ent->start;
 		e820_cur->size = mmap_ent->number_of_pages * PAGE_SIZE;
@@ -140,6 +138,7 @@ retry:
 	return status;
 }
 
+#if 0
 static
 void
 print_e820_mmap(efi_size entries, e820_entry *mmap)
@@ -150,6 +149,7 @@ print_e820_mmap(efi_size entries, e820_entry *mmap)
 		++mmap;
 	}
 }
+#endif
 
 static
 efi_status
@@ -298,7 +298,7 @@ get_file_size(efi_file_protocol *file, efi_size *file_size)
 }
 
 void
-kernel_init(void *linux_entry, struct boot_params *boot_params);
+kernel_init(struct grr_handover *handover);
 
 efi_status
 boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
@@ -317,6 +317,8 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	efi_file_protocol	*initrd_file;
 	efi_size		initrd_size;
 	void			*initrd_base;
+
+	struct grr_handover	*handover;
 
 	efi_size		map_key;
 
@@ -419,6 +421,41 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	if (EFI_ERROR(status))
 		goto err_free_initrd;
 
+	/*
+	 * Allocate handover block
+	 */
+	status = bs->allocate_pages(
+		allocate_any_pages,
+		efi_runtime_services_data,
+		PAGE_COUNT(sizeof(struct grr_handover)),
+		(efi_physical_address *) &handover);
+	if (EFI_ERROR(status))
+		goto err_free_initrd;
+
+	/*
+	 * Allocate hypervisor memory blocks
+	 */
+	handover->hmem_entries = 2;
+
+	handover->hmem[0].addr = 0x100000;	/* 64K of low-memory */
+	handover->hmem[0].size = 0x10000;
+	status = bs->allocate_pages(
+		allocate_max_address,
+		efi_runtime_services_data,
+		PAGE_COUNT(handover->hmem[0].size),
+		(efi_physical_address *) &handover->hmem[0].addr);
+	if (EFI_ERROR(status))
+		goto err_free_initrd;
+
+	handover->hmem[1].size = 0x1000000;
+	status = bs->allocate_pages(		/* 16M of high-memory */
+		allocate_any_pages,
+		efi_runtime_services_data,
+		PAGE_COUNT(handover->hmem[1].size),
+		(efi_physical_address *) &handover->hmem[1].addr);
+	if (EFI_ERROR(status))
+		goto err_free_initrd;
+
 	/* Now we can close all file handles */
 	initrd_file->close(initrd_file);
 	kernel_file->close(kernel_file);
@@ -459,8 +496,11 @@ boot_linux(efi_ch16 *kernel_path, efi_ch16 *initrd_path, char *cmdline)
 	if (EFI_ERROR(status))
 		return status;
 
-	/* Call the VMM's kernel to start Linux as a guest */
-	kernel_init(kernel_base + 0x200, boot_params);
+	/* Hand over to the hypervisor */
+	handover->rsdp_addr = boot_params->acpi_rsdp_addr;
+	handover->linux_entry = (efi_u64) kernel_base + 0x200;
+	handover->boot_params = (efi_u64) boot_params;
+	kernel_init(handover);
 
 err_free_initrd:
 	bs->free_pages((efi_physical_address) initrd_base,

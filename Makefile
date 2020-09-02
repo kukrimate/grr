@@ -10,6 +10,7 @@ OBJ := src/efi/main.o \
 	src/vmm/helper.o \
 	src/vmm/vmm.o \
 	src/kernel/acpi.o  \
+	src/kernel/alloc.o \
 	src/kernel/smp.o \
 	src/kernel/uart.o \
 	src/kernel/init.o \
