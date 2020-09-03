@@ -32,6 +32,11 @@ vmm_startup_bsp:
 	jmp vmm_execute
 
 ap_guest_entry:
+	movl 0xfee00020, %eax
+	shrl $24, %eax
+1: 	cmpb sipi_core, %al
+	jne 1b
+	vmmcall
 1:	jmp 1b
 
 /* Start an AP VMM */

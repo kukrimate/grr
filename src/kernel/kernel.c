@@ -13,9 +13,9 @@
 
 /*
  * Global kernel lock
+ * NOTE: the BSP owns the lock from the start
  */
-int
-kernel_global_lock = 0;
+int kernel_global_lock = 1;
 
 /*
  * Paging setup code
@@ -34,7 +34,7 @@ pginit(void)
 	kernel_pml4 = alloc_pages(1, 0xffffffff);
 	cur_phys = 0;
 
-	for (pml4_idx = 0; pml4_idx < 512; ++pml4_idx) {
+	for (pml4_idx = 0; pml4_idx < 256; ++pml4_idx) {
 		pdp = alloc_pages(1, 0);
 		for (pdp_idx = 0; pdp_idx < 512; ++pdp_idx) {
 			pdp[pdp_idx] = cur_phys | 0x83;

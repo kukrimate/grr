@@ -65,6 +65,11 @@ typedef struct {
 	acpi_madt_entry entries[0];
 } __attribute__((packed)) acpi_madt;
 
+/*
+ * Local APIC address
+ */
+extern void *lapic_addr;
+
 void
 acpi_smp_init(acpi_rsdp *rsdp);
 

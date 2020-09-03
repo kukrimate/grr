@@ -5,7 +5,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <include/x86.h>
-#include "uart.h"
+#include <kernel/acpi.h>
+#include <kernel/uart.h>
 
 /* UART registers */
 enum {
@@ -105,6 +106,12 @@ uart_print(const char *fmt, ...)
 	va_list va;
 	_Bool wide;
 	const char *p, buf[20];
+
+	/* Print APIC id */
+	uart_write('[');
+	uart_print_uint32_t(acpi_get_apic_id(), 10);
+	uart_write(']');
+	uart_write(' ');
 
 	va_start(va, fmt);
 	for (; *fmt; ++fmt)

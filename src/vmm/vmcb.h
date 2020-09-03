@@ -55,7 +55,7 @@ struct vmcb {
 	u32 shutdown	: 1;
 
 	u16 vmrun	: 1;	/* Offset: 0x10 */
-	u16 vmcall	: 1;
+	u16 vmmcall	: 1;
 	u16 vmload	: 1;
 	u16 vmsave	: 1;
 	u16 stgi	: 1;

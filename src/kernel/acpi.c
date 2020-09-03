@@ -43,9 +43,7 @@ acpi_find_table(acpi_rsdp *rsdp, u32 signature)
 }
 
 /* The LAPIC address as discovered from the MADT */
-static
-void *
-lapic_addr;
+void *lapic_addr;
 
 /* SMP init trampoline */
 void smp_init16();
@@ -90,9 +88,6 @@ acpi_smp_init(acpi_rsdp *rsdp)
 			*(uint64_t *) (smp_init64_rsp + 2) =
 				(uint64_t) alloc_pages(1, 0) + 4096;
 
-			/* Lock on behalf of the AP */
-			kernel_global_lock = 1;
-
 			/* Init IPI */
 			*(uint32_t *) (lapic_addr + 0x310) =
 				(madt_entry->lapic.apic_id << 24);
@@ -105,6 +100,9 @@ acpi_smp_init(acpi_rsdp *rsdp)
 				0x00004600 | ((uint64_t) trampoline / 4096);
 
 			/* Wait for the newly started AP to finish */
+			spinlock_unlock(kernel_global_lock);
+			for (size_t i =0; i < 100000000; ++i)
+				;
 			spinlock_lock(kernel_global_lock);
 		}
 
@@ -128,8 +126,7 @@ void
 acpi_smp_ap_entry(void)
 {
 	kernel_core_init();
-	uart_print("AP %d reached C code!\n",
-		*(uint32_t *) (lapic_addr + 0x20) >> 24);
+	spinlock_lock(kernel_global_lock);
 	uart_print("Calling AP VMM startup!\n");
 	vmm_startup_ap(vmm_setup_core());
 }

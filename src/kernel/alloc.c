@@ -102,6 +102,9 @@ alloc_pages(size_t count, uint64_t maxaddr)
 			goto alloc;
 	} while (block_idx--);
 fail:
+	uart_print("OUT OF MEMORY!!!\n");
+	for (;;)
+		;
 	return NULL;
 alloc:
 	while (count--)
