@@ -134,7 +134,8 @@ retry:
 		}
 	}
 
-	/* NOTE: the UEFI mmap cannot be freed otherwise UEFI shits itself */
+	/* NOTE: the UEFI memmap cannot ever be freed otherwise calling
+	   ExitBootServices is not allowed */
 	return status;
 }
 

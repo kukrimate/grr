@@ -56,7 +56,7 @@ make_ident(void)
 	}
 	return nested_pml4;
 }
-/* TODO: investigate why KVM is a broken piece of shit with 1GiB pages */
+/* TODO: investigate why KVM is a broken with 1GiB pages */
 #endif
 
 static
