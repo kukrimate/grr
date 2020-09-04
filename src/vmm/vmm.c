@@ -288,37 +288,48 @@ uint8_t sipi_vector = 0;
 void
 vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 {
-	uint64_t rax, rbx, rcx, rdx;
+	uint64_t rax, rcx, rdx, rbx;
 	uint8_t *guest_rip;
 	uint32_t val;
 
 	switch (vmcb->exitcode) {
 	case VMEXIT_CPUID:
-		uart_print("CPUID EAX=%x\n", vmcb->rax);
+		/* Print CPUID leaf and subleaf */
+		uart_print("CPUID RAX=%lx, RCX=%lx\n", vmcb->rax, gprs->rcx);
 
 		rax = vmcb->rax;
+		rcx = gprs->rcx;
 		asm volatile (
 			"movq %0, %%rax\n"
+			"movq %1, %%rcx\n"
 			"cpuid\n"
 			"movq %%rax, %0\n"
-			"movq %%rbx, %1\n"
-			"movq %%rcx, %2\n"
-			"movq %%rdx, %3\n"
-			: "=m" (rax), "=m" (rbx), "=m" (rcx), "=m" (rdx)
-			:: "rax", "rbx", "rcx", "rdx");
+			"movq %%rcx, %1\n"
+			"movq %%rdx, %2\n"
+			"movq %%rbx, %3\n"
+			: "=m" (rax), "=m" (rcx), "=m" (rdx), "=m" (rbx)
+			:: "rax", "rcx", "rdx", "rbx");
 
-		if (!vmcb->rax) { /* Fake CPUID to BootlegAMD */
+		switch (vmcb->rax) {
+		case 0:	/* Change the CPUID string to BootlegAMD */
 			vmcb->rax = rax;
 			gprs->rbx = 0x746f6f42;
 			gprs->rcx = 0x0000444d;
 			gprs->rdx = 0x4167656c;
-		} else {
+			break;
+		case 1:	/* Hide x2APIC support from the OS */
+			vmcb->rax = rax;
+			gprs->rbx = rbx;
+			gprs->rcx = rcx & ~(1 << 21);
+			gprs->rdx = rdx;
+			break;
+		default:
 			vmcb->rax = rax;
 			gprs->rbx = rbx;
 			gprs->rcx = rcx;
 			gprs->rdx = rdx;
+			break;
 		}
-
 		vmcb->rip += 2;
 		break;
 	case VMEXIT_VMMCALL: /* AP guest code fires this
