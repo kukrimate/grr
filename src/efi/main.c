@@ -13,8 +13,8 @@ boot_linux(
 
 #define KERNEL	L"\\efi\\grr\\vmlinuz-4.19.0-10-amd64"
 #define INITRD	L"\\efi\\grr\\initrd.img-4.19.0-10-amd64"
-#define CMDLINE	"root=UUID=b2e1c499-2f97-4f0b-a3a6-d356dab64705 ro"	/* KVM */
-// #define CMDLINE	"root=UUID=213c36a7-f326-42bd-b19c-5e71027a8c7d ro"	/* VMWARE */
+#define CMDLINE	"root=/dev/sda2 ro"
+
 void
 efiapi
 efi_main(efi_handle image_handle, efi_system_table *system_table)
