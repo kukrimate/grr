@@ -26,6 +26,8 @@ GRR relies on the libefi development kit for UEFI support. This repository needs
 to be cloned as a subdirectory inside the libefi tree then `make` can be used
 to build an image. Please note that libefi relies on a mingw-w64 targeting
 copy of the GNU toolchain to be installed on the build machine.
+NOTE for driver: change the subsystem id in Makefile.efi in the libefi tree to
+12
 
 ## Copying
 GRR is being released under the terms of the ISC license, for more details see

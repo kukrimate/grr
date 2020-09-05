@@ -4,9 +4,9 @@ CFLAGS += -Isrc -Wall -mgeneral-regs-only \
 	-Wno-missing-braces -Wno-unused-function \
 	-Wno-unused-variable -Wno-unused-but-set-variable
 
-APP := hdd/efi/boot/bootx64.efi
+APP := hdd/efi/grr/grr.efi
 OBJ := src/efi/main.o \
-	src/efi/loader.o \
+	src/efi/hook.o \
 	src/vmm/helper.o \
 	src/vmm/vmm.o \
 	src/kernel/acpi.o  \

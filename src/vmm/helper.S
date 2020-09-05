@@ -15,19 +15,9 @@ add $0x20, %rsp
 .global vmm_startup_bsp
 vmm_startup_bsp:
 	push %rcx	/* VMCB */
-	push %rdx	/* Entry point */
-	push %r8	/* Boot params */
 
 	/* Setup VMCB */
 	mscall vmm_setup
-
-	/* Boot params go into RSI */
-	pop %rsi
-
-	/* Set guest entry point to linux_entry */
-	pop %rax
-	movq 0(%rsp), %rcx
-	movq %rax, 0x578(%rcx)
 
 	jmp vmm_execute
 
@@ -45,6 +35,7 @@ vmm_startup_ap:
 	push %rcx	/* VMCB */
 
 	/* Setup VMCB */
+	movq $0, %rdx	/* No handover block on APs */
 	mscall vmm_setup
 
 	/* Make AP guest wait for SIPI from the BSP */

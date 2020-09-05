@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <khelper.h>
 #include <include/x86.h>
+#include <include/handover.h>
 #include <kernel/acpi.h>
 #include <kernel/alloc.h>
 #include <kernel/kernel.h>
@@ -95,7 +96,7 @@ make_ident(void)
 
 
 void
-vmm_setup(struct vmcb *vmcb)
+vmm_setup(struct vmcb *vmcb, struct grr_handover *handover)
 {
 	/* Setup VMCB */
 	vmcb->guest_asid = 1;
@@ -126,6 +127,13 @@ vmm_setup(struct vmcb *vmcb)
 	vmcb->fs_attrib = 0x0092;
 	vmcb->gs_selector = 0x18;
 	vmcb->gs_attrib = 0x0092;
+
+	if (handover) {
+		uart_print("Got handover block: %p\n", handover);
+		vmcb->rsp = handover->rsp + 8;
+		vmcb->rip = * (uint64_t *) handover->rsp;
+		/* TODO: add other callee saved registers */
+	}
 
 	vmcb->cr0 = read_cr0();
 	vmcb->cr3 = read_cr3();

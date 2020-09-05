@@ -113,6 +113,5 @@ kernel_main(struct grr_handover *handover)
 
 	/* Start Linux in the VMM */
 	uart_print("Calling BSP VMM startup!\n");
-	vmm_startup_bsp(vmm_setup_core(),
-		handover->linux_entry, handover->boot_params);
+	vmm_startup_bsp(vmm_setup_core(), handover);
 }

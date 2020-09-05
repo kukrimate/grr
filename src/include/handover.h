@@ -25,10 +25,9 @@ struct grr_handover {
 	u64 rsdp_addr;
 
 	/*
-	 * Linux entry point and boot parameters
+	 * MS x64 ABI callee saved registers
 	 */
-	u64 linux_entry;
-	u64 boot_params;
-};
+	u64 rbx, rbp, rdi, rsi, rsp, r12, r13, r14, r15;
+} __attribute__((packed));
 
 #endif
