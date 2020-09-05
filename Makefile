@@ -4,7 +4,9 @@ CFLAGS += -Isrc -Wall -mgeneral-regs-only \
 	-Wno-missing-braces -Wno-unused-function \
 	-Wno-unused-variable -Wno-unused-but-set-variable
 
-APP := hdd/efi/grr/grr.efi
+SUBSYSTEM := 12
+
+APP := hdd/efi/grr/driver.efi
 OBJ := src/efi/main.o \
 	src/efi/hook.o \
 	src/vmm/helper.o \
