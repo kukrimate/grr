@@ -387,12 +387,23 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 			guest_rip[1], guest_rip[2], guest_rip[3],
 			guest_rip[4], guest_rip[5], guest_rip[6]);
 
-		if (guest_rip[1] == 0xb7) {
+		switch (guest_rip[1]) {
+		case 0xb7:	/* RSI */
 			val = gprs->rsi;
-		} else if (guest_rip[1] == 0x3c) {
+			break;
+		case 0x3c:	/* RDI */
 			val = gprs->rdi;
-		} else { /* 0x14 */
+			break;
+		case 0x14:	/* RDX */
 			val = gprs->rdx;
+			break;
+		case 0x04:	/* RAX */
+			val = vmcb->rax;
+			break;
+		default:
+			uart_print("MMIO emu fail!!\n");
+			for (;;)
+				;
 		}
 		vmcb->rip += 7;
 
