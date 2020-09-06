@@ -15,9 +15,22 @@ add $0x20, %rsp
 .global vmm_startup_bsp
 vmm_startup_bsp:
 	push %rcx	/* VMCB */
+	push %rdx	/* Handover block */
 
 	/* Setup VMCB */
 	mscall vmm_setup
+
+	/* Restore registers */
+	pop %rcx
+	movq 0x210(%rcx), %rbx
+	movq 0x218(%rcx), %rbp
+	movq 0x220(%rcx), %rdi
+	movq 0x228(%rcx), %rsi
+	// movq 0x230(%rcx), %rsp
+	movq 0x238(%rcx), %r12
+	movq 0x240(%rcx), %r13
+	movq 0x248(%rcx), %r14
+	movq 0x250(%rcx), %r15
 
 	jmp vmm_execute
 
