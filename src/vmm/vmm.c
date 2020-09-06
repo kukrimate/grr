@@ -11,7 +11,7 @@
 #include <kernel/alloc.h>
 #include <kernel/kernel.h>
 #include <kernel/uart.h>
-#include "vmcb.h"
+#include <vmm/vmcb.h>
 
 #define MSR_VM_CR	0xC0010114
 # define VM_CR_R_INIT	(1 << 1)
@@ -110,7 +110,7 @@ vmm_setup(struct vmcb *vmcb, struct grr_handover *handover)
 	}
 
 	/* CPUID emulation */
-	vmcb->cpuid = 1;
+	// vmcb->cpuid = 1;
 
 	/* FIXME: the current segmentation setup has no GDT backing it,
 		only hidden segmnet registers are set up, but Linux loads its
@@ -383,29 +383,65 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 		uart_print("Nested page fault at: %p!\n", vmcb->exitinfo2);
 		guest_rip = guest_pgwalk((void *) vmcb->cr3, vmcb->rip);
 
-		uart_print("%x %x %x %x %x %x %x\n", guest_rip[0],
+		uart_print("%x %x %x %x %x %x %x %x %x %x\n", guest_rip[0],
 			guest_rip[1], guest_rip[2], guest_rip[3],
-			guest_rip[4], guest_rip[5], guest_rip[6]);
+			guest_rip[4], guest_rip[5], guest_rip[6],
+			guest_rip[7], guest_rip[8], guest_rip[9]);
 
-		switch (guest_rip[1]) {
-		case 0xb7:	/* RSI */
-			val = gprs->rsi;
+		switch (guest_rip[0]) {
+		case 0x89:
+			switch (guest_rip[1]) {
+			case 0xb7:	/* RSI */
+				val = gprs->rsi;
+				vmcb->rip += 7;
+				break;
+			case 0x3c:	/* RDI */
+				val = gprs->rdi;
+				vmcb->rip += 7;
+				break;
+			case 0x14:	/* RDX */
+				val = gprs->rdx;
+				vmcb->rip += 7;
+				break;
+			case 0x04:	/* RAX */
+				val = vmcb->rax;
+				vmcb->rip += 7;
+				break;
+			case 0x88:	/* ECX */
+				val = gprs->rcx;
+				vmcb->rip += 6;
+				break;
+			case 0x90:	/* EDX */
+				val = gprs->rdx;
+				vmcb->rip += 4;
+				break;
+			default:
+				goto mmio_fail;
+			}
 			break;
-		case 0x3c:	/* RDI */
-			val = gprs->rdi;
-			break;
-		case 0x14:	/* RDX */
+		case 0x41:
 			val = gprs->rdx;
+			vmcb->rip += 4;
 			break;
-		case 0x04:	/* RAX */
-			val = vmcb->rax;
+		case 0xc7:
+			val = *(uint32_t *) guest_rip + 6;
+			vmcb->rip += 10;
+			break;
+		case 0:
+			val = 0;
+			vmcb->rip += 2;
 			break;
 		default:
+			goto mmio_fail;
+		}
+
+		if (0) {
+mmio_fail:
 			uart_print("MMIO emu fail!!\n");
 			for (;;)
 				;
+
 		}
-		vmcb->rip += 7;
 
 		/* Do the write if it's not a IPI */
 		if (vmcb->exitinfo2 == 0xfee00300) {
