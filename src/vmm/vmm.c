@@ -110,7 +110,7 @@ vmm_setup(struct vmcb *vmcb, struct grr_handover *handover)
 	}
 
 	/* CPUID emulation */
-	// vmcb->cpuid = 1;
+	vmcb->cpuid = 1;
 
 	/* FIXME: the current segmentation setup has no GDT backing it,
 		only hidden segmnet registers are set up, but Linux loads its
@@ -303,7 +303,7 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 	switch (vmcb->exitcode) {
 	case VMEXIT_CPUID:
 		/* Print CPUID leaf and subleaf */
-		uart_print("CPUID RAX=%lx, RCX=%lx\n", vmcb->rax, gprs->rcx);
+		// uart_print("CPUID RAX=%lx, RCX=%lx\n", vmcb->rax, gprs->rcx);
 
 		rax = vmcb->rax;
 		rcx = gprs->rcx;
@@ -319,12 +319,12 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 			:: "rax", "rcx", "rdx", "rbx");
 
 		switch (vmcb->rax) {
-		case 0:	/* Change the CPUID string to BootlegAMD */
-			vmcb->rax = rax;
-			gprs->rbx = 0x746f6f42;
-			gprs->rcx = 0x0000444d;
-			gprs->rdx = 0x4167656c;
-			break;
+		// case 0:	/* Change the CPUID string to BootlegAMD */
+		// 	vmcb->rax = rax;
+		// 	gprs->rbx = 0x746f6f42;
+		// 	gprs->rcx = 0x0000444d;
+		// 	gprs->rdx = 0x4167656c;
+		// 	break;
 		case 1:	/* Hide x2APIC support from the OS */
 			vmcb->rax = rax;
 			gprs->rbx = rbx;
@@ -380,13 +380,13 @@ vmexit_handler(struct vmcb *vmcb, struct gprs *gprs)
 
 		break;
 	case VMEXIT_NPF:
-		uart_print("Nested page fault at: %p!\n", vmcb->exitinfo2);
+		// uart_print("Nested page fault at: %p!\n", vmcb->exitinfo2);
 		guest_rip = guest_pgwalk((void *) vmcb->cr3, vmcb->rip);
 
-		uart_print("%x %x %x %x %x %x %x %x %x %x\n", guest_rip[0],
-			guest_rip[1], guest_rip[2], guest_rip[3],
-			guest_rip[4], guest_rip[5], guest_rip[6],
-			guest_rip[7], guest_rip[8], guest_rip[9]);
+		// uart_print("%x %x %x %x %x %x %x %x %x %x\n", guest_rip[0],
+		// 	guest_rip[1], guest_rip[2], guest_rip[3],
+		// 	guest_rip[4], guest_rip[5], guest_rip[6],
+		// 	guest_rip[7], guest_rip[8], guest_rip[9]);
 
 		switch (guest_rip[0]) {
 		case 0x89:
