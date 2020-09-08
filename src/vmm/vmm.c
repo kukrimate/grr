@@ -244,44 +244,44 @@ write_guest_gpr(struct vmcb *vmcb, struct gprs *gprs, int idx, uint64_t val)
 
 static
 void *
-guest_pgwalk(uint64_t *Pml4, uint64_t VirtAddr)
+guest_pgwalk(uint64_t *pml4, uint64_t virt_addr)
 {
-	uint64_t Pml4Idx, PdpIdx, PdIdx, PtIdx;
-	uint64_t *TmpPtr;
+	uint64_t pml4_idx, pdp_idx, pd_idx, pt_idx;
+	uint64_t *tmp_ptr;
 
-	Pml4Idx = VirtAddr >> 39 & 0x1ff;
-	PdpIdx  = VirtAddr >> 30 & 0x1ff;
-	PdIdx   = VirtAddr >> 21 & 0x1ff;
-	PtIdx   = VirtAddr >> 12 & 0x1ff;
+	pml4_idx = virt_addr >> 39 & 0x1ff;
+	pdp_idx  = virt_addr >> 30 & 0x1ff;
+	pd_idx   = virt_addr >> 21 & 0x1ff;
+	pt_idx   = virt_addr >> 12 & 0x1ff;
 
 	/* Page map level 4 */
-	if (!(Pml4[Pml4Idx] & 1))
+	if (!(pml4[pml4_idx] & 1))
 		return NULL;
-	TmpPtr = (void *) PT_ADDR(Pml4[Pml4Idx]);
+	tmp_ptr = (void *) PT_ADDR(pml4[pml4_idx]);
 
 	/* Page directory pointer */
-	if (!(TmpPtr[PdpIdx] & 1))
+	if (!(tmp_ptr[pdp_idx] & 1))
 		return NULL;
-	else if (TmpPtr[PdpIdx] & 0x80) /* 1 GiB page */
-		return (void *) PT_ADDR_HUGE(TmpPtr[PdpIdx])
-			+ (VirtAddr & 0x3fffffffULL);
+	else if (tmp_ptr[pdp_idx] & 0x80) /* 1 GiB page */
+		return (void *) PT_ADDR_HUGE(tmp_ptr[pdp_idx])
+			+ (virt_addr & 0x3fffffffULL);
 
-	TmpPtr = (void *) PT_ADDR(TmpPtr[PdpIdx]); /* Page directory */
+	tmp_ptr = (void *) PT_ADDR(tmp_ptr[pdp_idx]); /* Page directory */
 
 	/* Page directory */
-	if (!(TmpPtr[PdIdx] & 1))
+	if (!(tmp_ptr[pd_idx] & 1))
 		return NULL;
-	else if (TmpPtr[PdIdx] & 0x80) /* 2 MiB page */
-		return (void *) PT_ADDR_HUGE(TmpPtr[PdIdx])
-			+ (VirtAddr & 0x1fffffULL);
+	else if (tmp_ptr[pd_idx] & 0x80) /* 2 MiB page */
+		return (void *) PT_ADDR_HUGE(tmp_ptr[pd_idx])
+			+ (virt_addr & 0x1fffffULL);
 
-	TmpPtr = (void *) PT_ADDR(TmpPtr[PdIdx]);  /* Page table */
+	tmp_ptr = (void *) PT_ADDR(tmp_ptr[pd_idx]);  /* Page table */
 
 	/* Page table */
-	if (!(TmpPtr[PtIdx] & 1))
+	if (!(tmp_ptr[pt_idx] & 1))
 		return NULL;
 	else /* 4 KiB page */
-		return (void *) PT_ADDR(TmpPtr[PtIdx]) + (VirtAddr & 0xfffULL);
+		return (void *) PT_ADDR(tmp_ptr[pt_idx]) + (virt_addr & 0xfffULL);
 }
 
 uint8_t sipi_core = 0;
