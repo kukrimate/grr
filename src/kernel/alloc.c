@@ -117,7 +117,7 @@ free_pages(void *addr, size_t count)
 {
 	size_t block_idx, start;
 
-	if (!addr && !count) /* Can't free non-existent pages */
+	if (!addr || !count) /* Can't free non-existent pages */
 		return;
 
 	for (block_idx = 0; block_idx < alloc_blockcnt; ++block_idx)
