@@ -128,5 +128,5 @@ acpi_smp_ap_entry(void)
 	kernel_core_init();
 	spinlock_lock(kernel_global_lock);
 	uart_print("Calling AP VMM startup!\n");
-	vmm_startup_ap(vmm_setup_core());
+	vmm_execute(vmm_setup_ap());
 }

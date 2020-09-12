@@ -11,29 +11,8 @@ add $0x20, %rsp
 
 .section .text
 
-/* Start the BSP VMM */
-.global vmm_startup_bsp
-vmm_startup_bsp:
-	push %rcx	/* VMCB */
-	push %rdx	/* Handover block */
-
-	/* Setup VMCB */
-	mscall vmm_setup
-
-	/* Restore registers */
-	pop %rcx
-	movq 0x210(%rcx), %rbx
-	movq 0x218(%rcx), %rbp
-	movq 0x220(%rcx), %rdi
-	movq 0x228(%rcx), %rsi
-	// movq 0x230(%rcx), %rsp
-	movq 0x238(%rcx), %r12
-	movq 0x240(%rcx), %r13
-	movq 0x248(%rcx), %r14
-	movq 0x250(%rcx), %r15
-
-	jmp vmm_execute
-
+/* AP guest SIPI catcher */
+.global ap_guest_entry
 ap_guest_entry:
 	movl 0xfee00020, %eax
 	shrl $24, %eax
@@ -42,26 +21,35 @@ ap_guest_entry:
 	vmmcall
 1:	jmp 1b
 
-/* Start an AP VMM */
-.global vmm_startup_ap
-vmm_startup_ap:
-	push %rcx	/* VMCB */
-
-	/* Setup VMCB */
-	movq $0, %rdx	/* No handover block on APs */
-	mscall vmm_setup
-
-	/* Make AP guest wait for SIPI from the BSP */
-	movq 0(%rsp), %rcx
-	movq $ap_guest_entry, 0x578(%rcx)
 
 /* VMM execute loop */
+.global vmm_execute
 vmm_execute:
+	push %rcx	/* CPU context */
+
+.execute_loop:
+	/* Restore registers */
+	movq (%rsp), %rax
+	movq 0x1000(%rax), %rbx
+	movq 0x1008(%rax), %rcx
+	movq 0x1010(%rax), %rdx
+	movq 0x1018(%rax), %rsi
+	movq 0x1020(%rax), %rdi
+	movq 0x1028(%rax), %rbp
+	movq 0x1030(%rax), %r8
+	movq 0x1038(%rax), %r9
+	movq 0x1040(%rax), %r10
+	movq 0x1048(%rax), %r11
+	movq 0x1050(%rax), %r12
+	movq 0x1058(%rax), %r13
+	movq 0x1060(%rax), %r14
+	movq 0x1068(%rax), %r15
+
 	/* Release lock before starting guest */
 	lock btrl $0, kernel_global_lock
 
 	/* Start the VM */
-	movq 0(%rsp), %rax
+	movq (%rsp), %rax
 	vmload
 	vmrun
 	vmsave
@@ -70,40 +58,25 @@ vmm_execute:
 1:	lock btsl $0, kernel_global_lock
 	jc 1b
 
-	/* VMEXIT entry point */
-	push %r15
-	push %r14
-	push %r13
-	push %r12
-	push %r11
-	push %r10
-	push %r9
-	push %r8
-	push %rbp
-	push %rdi
-	push %rsi
-	push %rdx
-	push %rcx
-	push %rbx
+	/* Save registers */
+	movq (%rsp), %rax
+	movq %rbx, 0x1000(%rax)
+	movq %rcx, 0x1008(%rax)
+	movq %rdx, 0x1010(%rax)
+	movq %rsi, 0x1018(%rax)
+	movq %rdi, 0x1020(%rax)
+	movq %rbp, 0x1028(%rax)
+	movq %r8,  0x1030(%rax)
+	movq %r9,  0x1038(%rax)
+	movq %r10, 0x1040(%rax)
+	movq %r11, 0x1048(%rax)
+	movq %r12, 0x1050(%rax)
+	movq %r13, 0x1058(%rax)
+	movq %r14, 0x1060(%rax)
+	movq %r15, 0x1068(%rax)
 
-	/* Do the actual work in C */
-	movq 112(%rsp), %rcx
-	movq %rsp, %rdx
+	/* Call high level #VMEXIT handler */
+	movq %rax, %rcx
 	mscall vmexit_handler
 
-	pop %rbx
-	pop %rcx
-	pop %rdx
-	pop %rsi
-	pop %rdi
-	pop %rbp
-	pop %r8
-	pop %r9
-	pop %r10
-	pop %r11
-	pop %r12
-	pop %r13
-	pop %r14
-	pop %r15
-
-	jmp vmm_execute
+	jmp .execute_loop
