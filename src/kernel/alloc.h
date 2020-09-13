@@ -23,15 +23,16 @@ void
 alloc_init(struct grr_handover *handover);
 
 /*
- * Allocate count pages, limiting addresses to maxaddr (or no limit if NULL)
+ * Allocate count pages
+ * If below is non-zero, only pages below that address will be returned
  */
 void *
-alloc_pages(size_t count, uint64_t maxaddr);
+alloc_pages(size_t cnt, void *below);
 
 /*
  * Free count pages starting at addr
  */
 void
-free_pages(void *addr, size_t count);
+free_pages(void *addr, size_t cnt);
 
 #endif

@@ -7,17 +7,22 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 
 /*
+ * Memory map entry
+ */
+struct hmem_entry {
+	u64 addr;
+	u64 size;
+};
+
+/*
  * EFI to HV handover block
  */
 struct grr_handover {
 	/*
-	 * Memory the hypervisor can use
+	 * Memory for the hypervisor to use
 	 */
 	u64 hmem_entries;
-	struct {
-		u64 addr;
-		u64 size;
-	} hmem[32];
+	struct hmem_entry hmem[32];
 
 	/*
 	 * ACPI RSDP address

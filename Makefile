@@ -6,7 +6,7 @@ CFLAGS += -Isrc -Wall -mgeneral-regs-only \
 
 SUBSYSTEM := 12
 
-APP := hdd/efi/grr/driver.efi
+APP := hdd/driver.efi
 OBJ := src/efi/main.o \
 	src/efi/hook.o \
 	src/vmm/helper.o \

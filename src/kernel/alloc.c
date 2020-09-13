@@ -10,15 +10,19 @@
 #include <kernel/uart.h>
 
 /*
- * Memory blocks
+ * Memory block
  */
 struct memblock {
+	/* Address of the first page */
 	uint8_t	*addr;
+	/* # of pages */
 	size_t	pages;
 };
 
-static size_t alloc_blockcnt = 0;
-static struct memblock *alloc_blockmap = NULL;
+/*
+ * List of memory blocks
+ */
+static struct memblock *blocks;
 
 #define GET_BIT(x, b) ((x)[(b) / 8] & (1 << ((b) % 8)))
 #define SET_BIT(x, b) ((x)[(b) / 8] |= (1 << ((b) % 8)))
@@ -27,107 +31,129 @@ static struct memblock *alloc_blockmap = NULL;
 void
 alloc_init(struct grr_handover *handover)
 {
-	size_t block_idx, page_idx;
-	uint64_t bitmap_pages;
+	struct hmem_entry *hmem, *hmem_end, tmp;
+	_Bool dirty;
+	struct memblock *block;
+	size_t bitmap_pages, i_pg;
 
-	/*
-	 * Intialize the page allocator
-	 */
-	uart_print("Hypervisor memory:\n");
-	for (block_idx = 0; block_idx < handover->hmem_entries; ++block_idx) {
-		uart_print("\t%p-%p\n", handover->hmem[block_idx].addr,
-			handover->hmem[block_idx].addr +
-			handover->hmem[block_idx].size - 1);
+	uart_print("Setting up page allocator\n");
 
-		/* The highest page of the first block becomes the blockmap
-		   FIXME: this breaks in a spectecular fashion
-		   	if we get a 1 page long memory block
-		   FIXME2: the blockmap is always one page, so if we get >256
-		   	memory blocks, it will cause breakage again */
-		if (!alloc_blockmap) {
-			alloc_blockmap = (void *) (handover->hmem[block_idx].addr
-				+ handover->hmem[block_idx].size - PAGE_SIZE);
-			memset(alloc_blockmap, 0, PAGE_SIZE);
-		}
+	/* End of the memory map */
+	hmem_end = handover->hmem + handover->hmem_entries;
 
-		/* Each block starts with a bitmap for said block */
-		++alloc_blockcnt;
-		alloc_blockmap[block_idx].addr = (void *) handover->hmem[block_idx].addr;
-		alloc_blockmap[block_idx].pages = PAGE_COUNT(handover->hmem[block_idx].size);
-		/* Number of pages needed for this block's bitmap */
-		bitmap_pages = PAGE_COUNT(handover->hmem[block_idx].size / PAGE_SIZE / 8);
-		memset(alloc_blockmap[block_idx].addr, 0, PAGE_SIZE * bitmap_pages);
-
-		/* Mark pages as free or used in the block */
-		for (page_idx = 0; page_idx < alloc_blockmap[block_idx].pages; ++page_idx) {
-			/* Mark the page used if it is the blockmap or
-			   part of this blocks bitmap */
-			if ((void *) handover->hmem[block_idx].addr
-					+ PAGE_SIZE * page_idx == alloc_blockmap
-					|| page_idx < bitmap_pages) {
-				SET_BIT(alloc_blockmap[block_idx].addr, page_idx);
+	/* Reverse sort the memory map, as we always allocate from top-down */
+	do {
+		dirty = 0;
+		for (hmem = handover->hmem + 1; hmem < hmem_end; ++hmem) {
+			if ((hmem - 1)->addr < hmem->addr) {
+				tmp.addr = hmem->addr;
+				tmp.size = hmem->size;
+				hmem->addr = (hmem - 1)->addr;
+				hmem->size = (hmem - 1)->size;
+				(hmem - 1)->addr = tmp.addr;
+				(hmem - 1)->size = tmp.size;
+				dirty = 1;
 			}
 		}
+	} while (dirty);
+
+	/* Allocator memory block */
+	block = NULL;
+
+	for (hmem = handover->hmem; hmem < hmem_end; ++hmem) {
+		uart_print("Usable memory at: [%p-%p]\n", hmem->addr,
+			hmem->addr + hmem->size -1);
+
+		if (!block) {
+			/* Allocate the block list from the first block */
+			block = (void *) hmem->addr + hmem->size - PAGE_SIZE;
+			/* Store a pointer to the block list in a global */
+			blocks = block;
+		}
+
+		block->addr = (void *) hmem->addr;
+		block->pages = PAGE_COUNT(hmem->size);
+
+		/* Number of pages needed for the block's bitmap */
+		bitmap_pages = PAGE_COUNT(block->pages / 8);
+
+		/* Make sure there is no leftover data in the bitmap */
+		bzero(block->addr, PAGE_SIZE * bitmap_pages);
+
+		/* Mark used pages as such in the bitmap */
+		for (i_pg = 0; i_pg < block->pages; ++i_pg)
+			/* A page can be used by the block list or the bitmap */
+			if (block->addr + i_pg * PAGE_SIZE == (void *) blocks
+					|| i_pg < bitmap_pages)
+				SET_BIT(block->addr, i_pg);
+
+		/* Move pointer to the next memory block */
+		++block;
 	}
+
+	/* Terminate the block list */
+	block->addr = NULL;
+	block->pages = 0;
+
+	uart_print("Page alloctor setup complete\n");
 }
 
 void *
-alloc_pages(size_t count, uint64_t maxaddr)
+alloc_pages(size_t cnt, void *below)
 {
-	size_t block_idx, page_idx;
-	size_t freebase, freecnt;
+	struct memblock *block;
+	size_t freecnt, i_pg;
 
-	if (!count) /* Can't allocate 0 pages */
+	if (!cnt)
 		goto fail;
 
-	/* Scan for a free region big enough */
-	block_idx = alloc_blockcnt - 1;
-	do {
-		freebase = freecnt = 0;
-		for (page_idx = 0; page_idx < alloc_blockmap[block_idx].pages; ++page_idx) {
-			if (!GET_BIT(alloc_blockmap[block_idx].addr, page_idx)) {
-				if (!freebase)
-					freebase = page_idx;
-				++freecnt;
+	for (block = blocks; block->pages; ++block) {
+		freecnt = 0;
+		i_pg = block->pages;
+
+		while (i_pg--)
+			if (!GET_BIT(block->addr, i_pg) && ((void *) block->addr
+					+ i_pg * PAGE_SIZE < below || !below)) {
+				if (++freecnt >= cnt)
+					goto allocate;
 			} else {
-				if (freecnt >= count && (!maxaddr || (uint64_t) alloc_blockmap[block_idx].addr
-						+ PAGE_SIZE * freebase <= maxaddr))
-					goto alloc;
-				else
-					freebase = freecnt = 0;
+				freecnt = 0;
 			}
-		}
-		if (freecnt >= count && (!maxaddr || (uint64_t) alloc_blockmap[block_idx].addr
-				+ PAGE_SIZE * freebase <= maxaddr))
-			goto alloc;
-	} while (block_idx--);
+	}
+
 fail:
-	uart_print("OUT OF MEMORY!!!\n");
+	/* Other code relies on this never returning NULL */
+	uart_print("OUT OF MEMORY!\n");
 	for (;;)
 		;
 	return NULL;
-alloc:
-	while (count--)
-		SET_BIT(alloc_blockmap[block_idx].addr, freebase + count);
-	return alloc_blockmap[block_idx].addr + PAGE_SIZE * freebase;
+
+allocate:
+	while (cnt--)
+		SET_BIT(block->addr, i_pg + cnt);
+	return block->addr + i_pg * PAGE_SIZE;
 }
 
 void
-free_pages(void *addr, size_t count)
+free_pages(void *addr, size_t cnt)
 {
-	size_t block_idx, start;
+	struct memblock *block;
+	size_t i_pg;
 
-	if (!addr || !count) /* Can't free non-existent pages */
+	/* We can't free non-existent pages */
+	if (!addr || !cnt)
 		return;
 
-	for (block_idx = 0; block_idx < alloc_blockcnt; ++block_idx)
-		if ((uint64_t) addr >= (uint64_t) alloc_blockmap[block_idx].addr
-				&& (uint64_t) addr + PAGE_SIZE * count <=
-				(uint64_t) alloc_blockmap[block_idx].addr
-				+ PAGE_SIZE * alloc_blockmap[block_idx].pages) {
-			start = PAGE_COUNT((uint64_t) addr -
-				(uint64_t) alloc_blockmap[block_idx].addr);
-			while (count--)
-				CLR_BIT(alloc_blockmap[block_idx].addr, start + count);
+	/* Look for the block the memory is allocated from */
+	for (block = blocks; block->pages; ++block)
+		if (addr >= (void *) block->addr &&
+				addr < (void *) block->addr
+				+ block->pages * PAGE_SIZE) {
+
+			/* Free the pages */
+			i_pg = (addr - (void *) block->addr) / PAGE_SIZE;
+			while (cnt--)
+				CLR_BIT(block->addr, i_pg + cnt);
+			break;
 		}
 }

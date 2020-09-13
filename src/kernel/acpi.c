@@ -62,7 +62,7 @@ acpi_smp_init(acpi_rsdp *rsdp)
 
 	uart_print("Setting up SMP...\n");
 
-	trampoline = alloc_pages(1, 0xfffff); /* This must be <1M */
+	trampoline = alloc_pages(1, (void *) 0x100000); /* This must be <1M */
 	memcpy(trampoline, smp_init16, smp_init16_end - smp_init16);
 	uart_print("SMP AP trampoline at: %p (Page: %d)\n",
 		trampoline, (uint64_t) trampoline / 4096);
