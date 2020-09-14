@@ -34,41 +34,40 @@ vmm_setup_cpu(void)
 	return alloc_pages(PAGE_COUNT(sizeof(struct vmm_cpu)), 0);
 }
 
-static uint64_t *nested_pml4 = NULL;
-static uint64_t *lapic_entry = NULL;
-
 static
-void *
-make_ident(void)
+void
+vmm_setup_npt(struct vmm_cpu *ctx)
 {
-	uint64_t cur_phys, *pdp, *pd, *pt;
+	uint64_t cur_phys, *pml4, *pdp, *pd;
 	size_t pdp_idx, pd_idx;
 
-	if (!nested_pml4) {
-		nested_pml4 = alloc_pages(1, 0);
-		cur_phys = 0;
+	cur_phys = 0;
+	pml4 = alloc_pages(1, NULL);
+	pdp = alloc_pages(1, NULL);
 
-		pdp = alloc_pages(1, 0);
-		for (pdp_idx = 0; pdp_idx < 512; ++pdp_idx) {
-			pd = alloc_pages(1, 0);
-			for (pd_idx = 0; pd_idx < 512; ++pd_idx) {
-				if (cur_phys == (uint64_t) lapic_addr) {
-					/* FIXME: this leaves a
-						memory hole after the LAPIC */
-					pt = alloc_pages(1, 0);
-					pt[0] = (uint64_t) cur_phys | 5;
-					lapic_entry = &pt[0];
-					pd[pd_idx] = (uint64_t) pt | 7;
-				} else {
-					pd[pd_idx] = cur_phys | 0x87;
-				}
-				cur_phys += 0x200000;
+	for (pdp_idx = 0; pdp_idx < 512; ++pdp_idx) {
+		pd = alloc_pages(1, NULL);
+		for (pd_idx = 0; pd_idx < 512; ++pd_idx) {
+			if (cur_phys == (uint64_t) lapic_addr) {
+				/* FIXME: this leaves a
+					memory hole after the LAPIC */
+				ctx->lapic_pt = alloc_pages(1, NULL);
+				ctx->lapic_pt[0] = (uint64_t) cur_phys | 5;
+				pd[pd_idx] = (uint64_t) ctx->lapic_pt | 7;
+			} else {
+				pd[pd_idx] = cur_phys | 0x87;
 			}
-			pdp[pdp_idx] = (uint64_t) pd | 7;
+			cur_phys += 0x200000;
 		}
-		nested_pml4[0] = (uint64_t) pdp | 7;
+		pdp[pdp_idx] = (uint64_t) pd | 7;
 	}
-	return nested_pml4;
+	pml4[0] = (uint64_t) pdp | 7;
+
+	ctx->vmcb.np_en = 1;
+	ctx->vmcb.n_cr3 = (uint64_t) pml4;
+
+	/* LAPIC emulator page */
+	ctx->lapic_emu = alloc_pages(1, NULL);
 }
 
 
@@ -85,8 +84,9 @@ vmm_setup_bsp(struct grr_handover *handover)
 	ctx->vmcb.vmmcall = 1;
 
 	/* Enable nested paging */
-	ctx->vmcb.np_en = 1;
-	ctx->vmcb.n_cr3 = (uint64_t) make_ident();
+	vmm_setup_npt(ctx);
+	/* Catch #DB for MMIO emulation */
+	ctx->vmcb.exception = (1 << 1);
 
 	/* CPUID emulation */
 	ctx->vmcb.cpuid = 1;
@@ -178,6 +178,7 @@ vmm_setup_ap(void)
 	return ctx;
 }
 
+#if 0
 #define PT_ADDR(x)	(x & 0xffffffffff000)
 #define PT_ADDR_HUGE(x)	(x & 0xfffffffffe000)
 
@@ -222,10 +223,12 @@ guest_pgwalk(uint64_t *pml4, uint64_t virt_addr)
 	else /* 4 KiB page */
 		return (void *) PT_ADDR(tmp_ptr[pt_idx]) + (virt_addr & 0xfffULL);
 }
+#endif
 
 uint8_t sipi_core = 0;
 uint8_t sipi_vector = 0;
 
+#define VMEXIT_EXP_DB	0x41
 #define VMEXIT_EXP_SX	0x5e
 #define VMEXIT_CPUID	0x72
 #define VMEXIT_VMRUN	0x80
@@ -319,84 +322,41 @@ vmexit_handler(struct vmm_cpu *ctx)
 
 		break;
 	case VMEXIT_NPF:
-		// uart_print("Nested page fault at: %p!\n", ctx->vmcb.exitinfo2);
-		guest_rip = guest_pgwalk((void *) ctx->vmcb.cr3, ctx->vmcb.rip);
+		/* Store target LAPIC register */
+		ctx->lapic_reg = ctx->vmcb.exitinfo2 - (uint64_t) lapic_addr;
 
-		// uart_print("%x %x %x %x %x %x %x %x %x %x\n", guest_rip[0],
-		// 	guest_rip[1], guest_rip[2], guest_rip[3],
-		// 	guest_rip[4], guest_rip[5], guest_rip[6],
-		// 	guest_rip[7], guest_rip[8], guest_rip[9]);
+		/* Switch to emulator page */
+		ctx->lapic_pt[0] = (uint64_t) ctx->lapic_emu | 7;
 
-		switch (guest_rip[0]) {
-		case 0x89:
-			switch (guest_rip[1]) {
-			case 0xb7:	/* RSI */
-				val = ctx->gprs.rsi;
-				ctx->vmcb.rip += 7;
-				break;
-			case 0x3c:	/* RDI */
-				val = ctx->gprs.rdi;
-				ctx->vmcb.rip += 7;
-				break;
-			case 0x14:	/* RDX */
-				val = ctx->gprs.rdx;
-				ctx->vmcb.rip += 7;
-				break;
-			case 0x04:	/* RAX */
-				val = ctx->vmcb.rax;
-				ctx->vmcb.rip += 7;
-				break;
-			case 0x88:	/* ECX */
-				val = ctx->gprs.rcx;
-				ctx->vmcb.rip += 6;
-				break;
-			case 0x90:	/* EDX */
-				val = ctx->gprs.rdx;
-				ctx->vmcb.rip += 4;
-				break;
-			default:
-				goto mmio_fail;
-			}
-			break;
-		case 0x41:
-			val = ctx->gprs.rdx;
-			ctx->vmcb.rip += 4;
-			break;
-		case 0xc7:
-			val = *(uint32_t *) guest_rip + 6;
-			ctx->vmcb.rip += 10;
-			break;
-		case 0:
-			val = 0;
-			ctx->vmcb.rip += 2;
-			break;
-		default:
-			goto mmio_fail;
-		}
+		/* Set trap flag */
+		ctx->vmcb.rflags |= (1 << 8);
 
-		if (0) {
-mmio_fail:
-			uart_print("MMIO emu fail!!\n");
-			for (;;)
-				;
+		break;
+	case VMEXIT_EXP_DB:
+		/* Get the value the guest wrote */
+		val = *(uint32_t *) (ctx->lapic_emu + ctx->lapic_reg);
 
-		}
-
-		/* Do the write if it's not a IPI */
-		if (ctx->vmcb.exitinfo2 == 0xfee00300) {
+		if (ctx->lapic_reg == 0x300) {
 			if ((val >> 8 & 0xf) == 5) {
 				uart_print("INIT apic: %p\n",
 					(*(uint32_t *) 0xfee00310) >> 24);
 			} else if ((val >> 8 & 0xf) == 6) {
 				sipi_vector = val & 0xff;
 				sipi_core = (*(uint32_t *) 0xfee00310) >> 24;
-				uart_print("SIPI apic: %p, vector: %p\n", sipi_core, sipi_vector);
+				uart_print("SIPI apic: %p, vector: %p\n",
+					sipi_core, sipi_vector);
 			} else {
-				*(uint32_t *) ctx->vmcb.exitinfo2 = val;
+				*(uint32_t *) (lapic_addr + ctx->lapic_reg) = val;
 			}
 		} else {
-			*(uint32_t *) ctx->vmcb.exitinfo2 = val;
+			*(uint32_t *) (lapic_addr + ctx->lapic_reg) = val;
 		}
+
+		/* Switch to real LAPIC */
+		ctx->lapic_pt[0] = (uint64_t) lapic_addr | 5;
+
+		/* Clear trap flag */
+		ctx->vmcb.rflags &= ~(1 << 8);
 
 		break;
 	default:

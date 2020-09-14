@@ -15,11 +15,10 @@ implemented is the replacment of the CPUID string `AuthenticAMD` with the string
 
 ## Supported environment
 KVM was used as the main development environment, but the current release of
-VMWare is also confirmed to work. The MMIO emulation used for SMP bootup,
-as implemented only supports decoding a limited set of instrutions needed to
-boot Debian 10 and Windows 10 LTSC 2019. Currently there are criticals bugs
-preventing it from booting on real hardware. To see debug output a UART must be
-present at I/O 0x3f8.
+VMWare is also confirmed to work. Debian 10 and Windows 10 LTSC 2019 are
+confirmed to work. Currently there are criticals bugs preventing it from
+booting on real hardware. To see debug output a UART must be present at
+I/O 0x3f8.
 
 ## Building
 GRR relies on the libefi development kit for UEFI support. This repository needs

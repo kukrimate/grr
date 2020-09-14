@@ -266,6 +266,18 @@ struct vmm_cpu {
 	 * Guest register state
 	 */
 	struct gprs gprs;
+	/*
+	 * LAPIC page table
+	 */
+	uint64_t *lapic_pt;
+	/*
+	 * LAPIC emulator page
+	 */
+	void *lapic_emu;
+	/*
+	 * LAPIC emulator register
+	 */
+	size_t lapic_reg;
 };
 
 struct vmm_cpu *
