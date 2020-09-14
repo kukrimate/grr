@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <include/x86.h>
 #include <kernel/acpi.h>
+#include <kernel/kernel.h>
 #include <kernel/uart.h>
 
 /* UART registers */
@@ -100,12 +101,19 @@ uart_print_##S(S num, int base) \
 genprint(uint32_t, int32_t)
 genprint(uint64_t, int64_t)
 
+/*
+ * Only one thread can print at a time
+ */
+static int print_lock;
+
 void
 uart_print(const char *fmt, ...)
 {
 	va_list va;
 	_Bool wide;
 	const char *p, buf[20];
+
+	spinlock_lock(print_lock);
 
 	/* Print APIC id */
 	uart_write('[');
@@ -164,4 +172,6 @@ wide_redo:
 			break;
 		}
 	va_end(va);
+
+	spinlock_unlock(print_lock);
 }

@@ -4,17 +4,10 @@
 /*
  * Simple spinlock
  */
-
 #define spinlock_lock(x) \
 	asm volatile ("1: lock btsl $0, %0; jc 1b" : "=m" (x))
 #define spinlock_unlock(x) \
 	asm volatile ("lock btrl $0, %0" : "=m" (x))
-
-/*
- * Global kernel lock
- */
-extern
-int kernel_global_lock;
 
 /*
  * Kernel root page table, used by the SMP setup code

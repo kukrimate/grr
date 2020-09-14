@@ -52,6 +52,13 @@ void smp_init16_end();
 /* Stack pointer for the AP */
 void smp_init64_rsp();
 
+/*
+ * AP online flag
+ * NOTE: the AP trampoline code is self-modifying thus we need to make sure
+ * the next AP isn't started before the previous one had left the trampoline
+ */
+int ap_online;
+
 void
 acpi_smp_init(acpi_rsdp *rsdp)
 {
@@ -94,16 +101,12 @@ acpi_smp_init(acpi_rsdp *rsdp)
 			*(uint32_t *) (lapic_addr + 0x300) = 0x00004500;
 
 			/* Startup IPI */
-			*(uint32_t *) (lapic_addr + 0x310) =
-				(madt_entry->lapic.apic_id << 24);
-			*(uint32_t *) (lapic_addr + 0x300) =
-				0x00004600 | ((uint64_t) trampoline / 4096);
-
-			/* Wait for the newly started AP to finish */
-			spinlock_unlock(kernel_global_lock);
-			for (size_t i =0; i < 100000000; ++i)
-				;
-			spinlock_lock(kernel_global_lock);
+			for (ap_online = 0; !ap_online; ) {
+				*(uint32_t *) (lapic_addr + 0x310) =
+					(madt_entry->lapic.apic_id << 24);
+				*(uint32_t *) (lapic_addr + 0x300) =
+					0x00004600 | ((uint64_t) trampoline / 4096);
+			}
 		}
 
 		len -= madt_entry->length;
@@ -125,8 +128,8 @@ acpi_get_apic_id(void)
 void
 acpi_smp_ap_entry(void)
 {
+	ap_online = 1;
 	kernel_core_init();
-	spinlock_lock(kernel_global_lock);
 	uart_print("Calling AP VMM startup!\n");
 	vmm_execute(vmm_setup_ap());
 }

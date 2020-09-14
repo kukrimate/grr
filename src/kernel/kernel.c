@@ -12,12 +12,6 @@
 #include <vmm/vmm.h>
 
 /*
- * Global kernel lock
- * NOTE: the BSP owns the lock from the start
- */
-int kernel_global_lock = 1;
-
-/*
  * Paging setup code
  */
 

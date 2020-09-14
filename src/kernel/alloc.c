@@ -7,6 +7,7 @@
 #include <khelper.h>
 #include <include/handover.h>
 #include <kernel/alloc.h>
+#include <kernel/kernel.h>
 #include <kernel/uart.h>
 
 /*
@@ -98,6 +99,11 @@ alloc_init(struct grr_handover *handover)
 	uart_print("Page alloctor setup complete\n");
 }
 
+/*
+ * Only one thread can write to the block list at a time
+ */
+static int blocklist_wr_lock;
+
 void *
 alloc_pages(size_t cnt, void *below)
 {
@@ -129,8 +135,10 @@ fail:
 	return NULL;
 
 allocate:
+	spinlock_lock(blocklist_wr_lock);
 	while (cnt--)
 		SET_BIT(block->addr, i_pg + cnt);
+	spinlock_unlock(blocklist_wr_lock);
 	return block->addr + i_pg * PAGE_SIZE;
 }
 
@@ -149,11 +157,12 @@ free_pages(void *addr, size_t cnt)
 		if (addr >= (void *) block->addr &&
 				addr < (void *) block->addr
 				+ block->pages * PAGE_SIZE) {
-
 			/* Free the pages */
 			i_pg = (addr - (void *) block->addr) / PAGE_SIZE;
+			spinlock_lock(blocklist_wr_lock);
 			while (cnt--)
 				CLR_BIT(block->addr, i_pg + cnt);
+			spinlock_unlock(blocklist_wr_lock);
 			break;
 		}
 }

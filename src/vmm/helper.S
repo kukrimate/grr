@@ -45,18 +45,11 @@ vmm_execute:
 	movq 0x1060(%rax), %r14
 	movq 0x1068(%rax), %r15
 
-	/* Release lock before starting guest */
-	lock btrl $0, kernel_global_lock
-
 	/* Start the VM */
 	movq (%rsp), %rax
 	vmload
 	vmrun
 	vmsave
-
-	/* Acquire lock on VMEXIT */
-1:	lock btsl $0, kernel_global_lock
-	jc 1b
 
 	/* Save registers */
 	movq (%rsp), %rax
