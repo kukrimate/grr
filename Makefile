@@ -1,4 +1,5 @@
-include ../tools/Makefile.efi
+LIBEFI := libefi
+include libefi/tools/Makefile.efi
 
 CFLAGS += -Isrc -Wall -mgeneral-regs-only \
 	-Wno-missing-braces -Wno-unused-function \
