@@ -4,10 +4,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <khelper.h>
 #include <kernel/acpi.h>
 #include <kernel/alloc.h>
 #include <kernel/kernel.h>
+#include <kernel/string.h>
 #include <kernel/uart.h>
 #include <vmm/vmm.h>
 

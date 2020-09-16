@@ -7,7 +7,7 @@ CFLAGS += -Isrc -Wall -mgeneral-regs-only \
 
 SUBSYSTEM := 12
 
-APP := hdd/driver.efi
+APP := driver.efi
 OBJ := src/efi/main.o \
 	src/efi/hook.o \
 	src/vmm/helper.o \
@@ -17,6 +17,7 @@ OBJ := src/efi/main.o \
 	src/kernel/smp.o \
 	src/kernel/uart.o \
 	src/kernel/init.o \
+	src/kernel/string.o \
 	src/kernel/kernel.o
 
 all: $(APP)

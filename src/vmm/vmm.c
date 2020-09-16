@@ -4,12 +4,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <khelper.h>
 #include <include/x86.h>
 #include <include/handover.h>
 #include <kernel/acpi.h>
 #include <kernel/alloc.h>
 #include <kernel/kernel.h>
+#include <kernel/string.h>
 #include <kernel/uart.h>
 #include <vmm/vmm.h>
 
@@ -361,7 +361,7 @@ vmexit_handler(struct vmm_cpu *ctx)
 		break;
 	default:
 		uart_print("Unknown #VMEXIT %p %p %p\n",
-			ctx->vmcb.exitcode,	ctx->vmcb.exitinfo1, ctx->vmcb.exitinfo2);
+			ctx->vmcb.exitcode, ctx->vmcb.exitinfo1, ctx->vmcb.exitinfo2);
 		for (;;)
 			;
 		break;

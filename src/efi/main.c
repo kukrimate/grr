@@ -3,9 +3,8 @@
  */
 
 #include <efi.h>
-#include <efiutil.h>
-#include <khelper.h>
 #include <include/handover.h>
+#include <kernel/string.h>
 
 /*
  * Physical page size
@@ -48,10 +47,8 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 {
 	efi_status status;
 
-	efi_init(image_handle, system_table);
-
 	/* Allocate handover block */
-	status = bs->allocate_pages(
+	status = system_table->boot_services->allocate_pages(
 		allocate_any_pages,
 		efi_runtime_services_data,
 		PAGE_COUNT(sizeof(struct grr_handover)),
@@ -64,7 +61,7 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 
 	handover->hmem[0].addr = 0x100000;	/* 64K of low-memory */
 	handover->hmem[0].size = 0x10000;
-	status = bs->allocate_pages(
+	status = system_table->boot_services->allocate_pages(
 		allocate_max_address,
 		efi_runtime_services_data,
 		PAGE_COUNT(handover->hmem[0].size),
@@ -73,7 +70,7 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 		return status;
 
 	handover->hmem[1].size = 0x1000000;
-	status = bs->allocate_pages(		/* 16M of high-memory */
+	status = system_table->boot_services->allocate_pages(		/* 16M of high-memory */
 		allocate_any_pages,
 		efi_runtime_services_data,
 		PAGE_COUNT(handover->hmem[1].size),
@@ -82,16 +79,16 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 		return status;
 
 	/* Find APCI RSDP */
-	for (size_t i = 0; i < st->cnt_config_entries; ++i)
-		if (!memcmp(&st->config_entries[i].vendor_guid,
+	for (size_t i = 0; i < system_table->cnt_config_entries; ++i)
+		if (!memcmp(&system_table->config_entries[i].vendor_guid,
 				&(efi_guid) EFI_ACPI_TABLE_GUID,
 				sizeof(efi_guid)))
 			handover->rsdp_addr =
-				(efi_u64) st->config_entries[i].vendor_table;
+				(efi_u64) system_table->config_entries[i].vendor_table;
 
 	/* Hook exit_boot_services */
-	exit_boot_services_orig = bs->exit_boot_services;
-	bs->exit_boot_services = &exit_boot_services_hook;
+	exit_boot_services_orig = system_table->boot_services->exit_boot_services;
+	system_table->boot_services->exit_boot_services = &exit_boot_services_hook;
 
 	return status;
 }
