@@ -65,7 +65,7 @@ struct vmcb {
 	u16 xsetbv	: 1;
 	u16 rdpru	: 1;
 	u16 efer_write	: 1;
-	u16 cr_wr_post	: 1;	/* after the write finished */
+	u16 cr_wr_post;		/* after the write finished */
 
 	u32 invlpgb	: 1;	/* Offset: 0x14 */
 	u32 invlpgb_il  : 1;	/* only illegally specified ones */
