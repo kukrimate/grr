@@ -25,7 +25,7 @@ ap_guest_entry:
 /* VMM execute loop */
 .global vmm_execute
 vmm_execute:
-	push %rcx	/* CPU context */
+	push %rdi	/* CPU context */
 
 .execute_loop:
 	/* Restore registers */
@@ -69,7 +69,7 @@ vmm_execute:
 	movq %r15, 0x1068(%rax)
 
 	/* Call high level #VMEXIT handler */
-	movq %rax, %rcx
+	movq %rax, %rdi
 	mscall vmexit_handler
 
 	jmp .execute_loop

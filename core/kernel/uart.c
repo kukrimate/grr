@@ -111,7 +111,7 @@ uart_print(const char *fmt, ...)
 {
 	va_list va;
 	_Bool wide;
-	const char *p, buf[20];
+	const char *p;
 
 	spinlock_lock(print_lock);
 

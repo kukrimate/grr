@@ -3,8 +3,9 @@
  */
 
 #include <efi.h>
-#include <include/handover.h>
-#include <kernel/string.h>
+#include <efiutil.h>
+#include <khelper.h>
+#include "handover.h"
 
 /*
  * Physical page size
@@ -46,6 +47,9 @@ efiapi
 efi_main(efi_handle image_handle, efi_system_table *system_table)
 {
 	efi_status status;
+	efi_size i;
+
+	efi_init(image_handle, system_table);
 
 	/* Allocate handover block */
 	status = system_table->boot_services->allocate_pages(
@@ -79,7 +83,7 @@ efi_main(efi_handle image_handle, efi_system_table *system_table)
 		return status;
 
 	/* Find APCI RSDP */
-	for (size_t i = 0; i < system_table->cnt_config_entries; ++i)
+	for (i = 0; i < system_table->cnt_config_entries; ++i)
 		if (!memcmp(&system_table->config_entries[i].vendor_guid,
 				&(efi_guid) EFI_ACPI_TABLE_GUID,
 				sizeof(efi_guid)))

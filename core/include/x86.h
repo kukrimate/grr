@@ -5,6 +5,7 @@
 #define X86_H
 
 static
+inline
 uint8_t
 inb(uint16_t port)
 {
@@ -14,6 +15,7 @@ inb(uint16_t port)
 }
 
 static
+inline
 uint16_t
 inw(uint16_t port)
 {
@@ -23,6 +25,7 @@ inw(uint16_t port)
 }
 
 static
+inline
 uint32_t
 inl(uint16_t port)
 {
@@ -32,6 +35,7 @@ inl(uint16_t port)
 }
 
 static
+inline
 void
 outb(uint16_t port, uint8_t val)
 {
@@ -39,6 +43,7 @@ outb(uint16_t port, uint8_t val)
 }
 
 static
+inline
 void
 outw(uint16_t port, uint16_t val)
 {
@@ -46,6 +51,7 @@ outw(uint16_t port, uint16_t val)
 }
 
 static
+inline
 void
 outl(uint16_t port, uint32_t val)
 {
@@ -53,6 +59,7 @@ outl(uint16_t port, uint32_t val)
 }
 
 static
+inline
 uint64_t
 rdmsr(uint64_t msr)
 {
@@ -62,6 +69,7 @@ rdmsr(uint64_t msr)
 }
 
 static
+inline
 void
 wrmsr(uint64_t msr, uint64_t value)
 {
@@ -72,6 +80,7 @@ wrmsr(uint64_t msr, uint64_t value)
 }
 
 static
+inline
 uint64_t
 read_cr0(void)
 {
@@ -82,6 +91,7 @@ read_cr0(void)
 }
 
 static
+inline
 uint64_t
 read_cr3(void)
 {
@@ -92,6 +102,7 @@ read_cr3(void)
 }
 
 static
+inline
 uint64_t
 read_cr4(void)
 {

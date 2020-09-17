@@ -1,9 +1,8 @@
-LIBEFI := libefi
-include libefi/tools/Makefile.efi
-
-CFLAGS += -Isrc -Wall -mgeneral-regs-only \
-	-Wno-missing-braces -Wno-unused-function \
-	-Wno-unused-variable -Wno-unused-but-set-variable
+CC	:= x86_64-elf-gcc
+CFLAGS	:= -Ilibefi/api -Isrc -std=gnu89 -Wall \
+	-ffreestanding -mgeneral-regs-only -mno-red-zone
+LDFLAGS	:= -nostdlib -mno-red-zone
+LDLIBS	:= -lgcc
 
 SUBSYSTEM := 12
 
@@ -23,7 +22,10 @@ OBJ := src/efi/main.o \
 all: $(APP)
 
 $(APP): $(OBJ)
-	$(LD) $(LDFLAGS) $^ -o $@ $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $^ $(LIBS)
 
 clean:
 	rm -f $(APP) $(OBJ)

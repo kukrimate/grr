@@ -31,4 +31,5 @@ movq %r15, 0x290(%rcx)
 movq $0, 0x218(%rcx)
 
 /* Start the hypervisor */
+mov %rcx, %rdi
 jmp kernel_init

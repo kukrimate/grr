@@ -1,3 +1,6 @@
 [submodule "libefi"]
 	path = libefi
 	url = https://github.com/kukrimate/libefi
+[submodule "hook/libefi"]
+	path = hook/libefi
+	url = https://github.com/kukrimate/libefi

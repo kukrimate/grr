@@ -239,7 +239,6 @@ void
 vmexit_handler(struct vmm_cpu *ctx)
 {
 	uint64_t rax, rcx, rdx, rbx;
-	uint8_t *guest_rip;
 	uint32_t val;
 
 	switch (ctx->vmcb.exitcode) {
