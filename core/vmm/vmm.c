@@ -260,12 +260,12 @@ vmexit_handler(struct vmm_cpu *ctx)
 			:: "rax", "rcx", "rdx", "rbx");
 
 		switch (ctx->vmcb.rax) {
-		// case 0:	/* Change the CPUID string to BootlegAMD */
-		// 	ctx->vmcb.rax = rax;
-		// 	ctx->gprs.rbx = 0x746f6f42;
-		// 	ctx->gprs.rcx = 0x0000444d;
-		// 	ctx->gprs.rdx = 0x4167656c;
-		// 	break;
+		case 0:	/* Change the CPUID string to BootlegAMD */
+			ctx->vmcb.rax = rax;
+			ctx->gprs.rbx = 0x746f6f42;
+			ctx->gprs.rcx = 0x0000444d;
+			ctx->gprs.rdx = 0x4167656c;
+			break;
 		case 1:	/* Hide x2APIC support from the OS */
 			ctx->vmcb.rax = rax;
 			ctx->gprs.rbx = rbx;

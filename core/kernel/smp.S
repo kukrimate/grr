@@ -2,43 +2,25 @@
  * SMP initialization trampoline
  */
 
-.section .data
-
-/*
- * SMP init GDT
- */
-smp_gdt:
-.quad	0
-.quad	0x00cf9a000000ffff	/* CS32 */
-.quad	0x00cf92000000ffff	/* DS32 */
-.quad	0x00209a0000000000	/* CS64 */
-.quad	0x0000920000000000	/* DS64 */
-smp_gdt_end:
-
 .section .text
 
 /*
- * 16-bit SMP init trampoline
- * NOTE: This has to be position independent
- *   because the C SMP init code will memcpy <1MiB
+ * 16-bit SMP init trampoline, C code will memcpy this below 1MiB
  */
 .global smp_init16
 smp_init16:
 .code16
 
-/* Setup %ds and %ss */
+/* Make sure DS matches CS */
 movw %cs, %ax
 movw %ax, %ds
-movw %ax, %ss
-/* Load stack (relative to IP=0, which is this function's start) */
-movw $smp_init16_end - smp_init16, %sp
 
-/* Load GDT */
-pushl $smp_gdt
-pushw $smp_gdt_end - smp_gdt
-movw %sp, %si
-lgdtw (%si)
-addw $6, %sp
+/*
+ * Load GDT
+ * NOTE: the GDTR address is reltive to the start of the trampoline
+ * as we are started in segmented realmode with IP=0
+ */
+lgdtw smp_fixup_gdtr - smp_init16
 
 /* Enable protected mode */
 movl %cr0, %eax
@@ -46,16 +28,28 @@ orl $1, %eax
 movl %eax, %cr0
 
 /* Jump into protected mode */
-ljmpl $0x08, $smp_init32
+.global smp_fixup_init32
+smp_fixup_init32:
+ljmpl $0x08, $0xdeadbeef
 
-/* NOTE: be careful, we only have 16 bytes of stack space */
-.skip 16
+/*
+ * GDT register loading zone
+ * NOTE: this must be inside the memcpy'd trampoline as we need to load
+ * this while still in real mode
+ */
+.global smp_fixup_gdtr
+smp_fixup_gdtr:
+.word 0
+.long 0
+
+/* Mark the end of the trampoline so C code knows its size */
 .global smp_init16_end
 smp_init16_end:
 
 /*
  * 32-bit SMP init
  */
+.global smp_init32
 smp_init32:
 .code32
 movl $0x10, %eax
@@ -70,7 +64,9 @@ movl $0xa0, %eax
 movl %eax, %cr4
 
 /* Load the kernel's page table */
-movl kernel_pml4, %eax
+.global smp_fixup_pml4
+smp_fixup_pml4:
+movl $0xdeadbeef, %eax
 movl %eax, %cr3
 
 /* Set EFER.LME */
@@ -84,12 +80,15 @@ movl %cr0, %eax
 orl $0x80000000, %eax
 movl %eax, %cr0
 
-/* Leave the 32-bit world */
-ljmpl $0x18, $smp_init64
+/* Jump into long mode */
+.global smp_fixup_init64
+smp_fixup_init64:
+ljmpl $0x18, $0xdeadbeef
 
 /*
  * 64-bit SMP init
  */
+.global smp_init64
 smp_init64:
 .code64
 movl $0x20, %eax
@@ -100,8 +99,8 @@ movl %eax, %fs
 movl %eax, %gs
 
 /* Setup 64-bit stack for this core */
-.global smp_init64_rsp
-smp_init64_rsp:
+.global smp_fixup_rsp
+smp_fixup_rsp:
 movq $0xdeadbeefdeadbeef, %rsp
 
 /* Call into C code */

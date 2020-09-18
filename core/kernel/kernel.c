@@ -43,41 +43,41 @@ pginit(void)
  * Segmentation setup code
  */
 
-static
 uint64_t
-gdt[] = {
+kernel_gdt[] = {
 	0,
-	0x00209A0000000000,	/* __BOOT_CS */
-	0x0000920000000000,	/* __BOOT_DS */
+	0x00cf9a000000ffff,	/* CS32 */
+	0x00cf92000000ffff,	/* DS32 */
+	0x00209A0000000000,	/* CS64 */
+	0x0000920000000000,	/* DS64 */
 };
 
+uint16_t
+kernel_gdt_size = sizeof(kernel_gdt);
+
 void
-kernel_core_init(void)
+load_gdt(void *base, uint16_t limit);
+
+void
+load_idt(void *base, uint16_t limit);
+
+void
+kernel_cpu_init(void)
 {
-	struct {
-		uint16_t limit;
-		uint64_t addr;
-	} __attribute__((packed)) gdtr;
-
-	gdtr.limit = sizeof(gdt);
-	gdtr.addr = (uint64_t) gdt;
-
-	asm volatile ("lgdt %0\n"
-			"pushq $0x08\n"
-			"pushq $reload_cs\n"
+	load_gdt(kernel_gdt, kernel_gdt_size);
+	asm volatile ("pushq $0x18\n"
+			"leaq reload_cs(%%rip), %%rax\n"
+			"pushq %%rax\n"
 			"retfq; reload_cs:\n"
-			"movl $0x10, %%eax\n"
+			"movl $0x20, %%eax\n"
 			"movl %%eax, %%ds\n"
 			"movl %%eax, %%es\n"
 			"movl %%eax, %%ss\n"
 			"movl %%eax, %%fs\n"
 			"movl %%eax, %%gs"
-			 :: "m" (gdtr) : "rax");
+			 ::: "rax");
 
-	gdtr.limit = 0;
-	gdtr.addr = 0;
-
-	asm volatile ("lidt %0" :: "m" (gdtr));
+	load_idt(0, 0);
 }
 
 
@@ -98,14 +98,14 @@ kernel_main(struct grr_handover *handover)
 	pginit();
 	uart_print("Kernel PML4: %p\n", kernel_pml4);
 
-	/* Use our own GDT */
-	kernel_core_init();
+	/* Load GDT and IDT (not used for now) */
+	kernel_cpu_init();
 	uart_print("Kernel GDT and IDT loaded!\n");
 
-	/* SMP init depends on lowmem + page table */
+	/* Bring up VMs on all APs */
 	acpi_smp_init((acpi_rsdp *) handover->rsdp_addr);
 
-	/* Start Linux in the VMM */
+	/* Bring up VM on the BSP */
 	uart_print("Calling BSP VMM startup!\n");
 	vmm_execute(vmm_setup_bsp(handover));
 }

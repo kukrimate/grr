@@ -49,8 +49,17 @@ void *lapic_addr;
 void smp_init16();
 void smp_init16_end();
 
-/* Stack pointer for the AP */
-void smp_init64_rsp();
+void smp_init32();
+void smp_init64();
+
+/* One time fixups */
+void smp_fixup_gdtr();		/* 16-bit limit, 32-bit base */
+void smp_fixup_pml4();		/* 32-bit */
+void smp_fixup_init32();	/* 32-bit */
+void smp_fixup_init64();	/* 32-bit */
+
+/* Per CPU fixups */
+void smp_fixup_rsp();
 
 /*
  * AP online flag
@@ -69,10 +78,18 @@ acpi_smp_init(acpi_rsdp *rsdp)
 
 	uart_print("Setting up SMP...\n");
 
-	trampoline = alloc_pages(1, (void *) 0x100000); /* This must be <1M */
+	/* Do SMP init fixups */
+	*(uint16_t *) smp_fixup_gdtr		= kernel_gdt_size;
+	*(uint32_t *) (smp_fixup_gdtr + 2)	= (uint64_t) kernel_gdt;
+	*(uint32_t *) (smp_fixup_pml4 + 1)	= (uint64_t) kernel_pml4;
+	*(uint32_t *) (smp_fixup_init32 + 2)	= (uint64_t) smp_init32;
+	*(uint32_t *) (smp_fixup_init64 + 1)	= (uint64_t) smp_init64;
+
+	/* Copy the 16-bit trampoline below 1MiB */
+	trampoline = alloc_pages(1, (void *) 0x100000);
 	memcpy(trampoline, smp_init16, smp_init16_end - smp_init16);
 	uart_print("SMP AP trampoline at: %p (Page: %d)\n",
-		trampoline, (uint64_t) trampoline / 4096);
+		trampoline, (uint64_t) trampoline / PAGE_SIZE);
 
 	madt = acpi_find_table(rsdp, ACPI_MADT_SIGNATURE);
 	uart_print("Found MADT at: %p\n", madt);
@@ -91,8 +108,8 @@ acpi_smp_init(acpi_rsdp *rsdp)
 			uart_print("Waking up AP with APIC ID: %d\n",
 				madt_entry->lapic.apic_id);
 
-			/* 4K stack for each AP */
-			*(uint64_t *) (smp_init64_rsp + 2) =
+			/* Fixup RSP for the current AP */
+			*(uint64_t *) (smp_fixup_rsp + 2) =
 				(uint64_t) alloc_pages(1, 0) + 4096;
 
 			/* Init IPI */
@@ -129,7 +146,7 @@ void
 acpi_smp_ap_entry(void)
 {
 	ap_online = 1;
-	kernel_core_init();
+	kernel_cpu_init();
 	uart_print("Calling AP VMM startup!\n");
 	vmm_execute(vmm_setup_ap());
 }

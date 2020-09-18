@@ -3,8 +3,8 @@ CC	:= x86_64-elf-gcc
 
 # Build flags
 CFLAGS	:= -I. -std=gnu89 -Wall -ffreestanding -fno-asynchronous-unwind-tables \
-	-mgeneral-regs-only -mno-red-zone
-LDFLAGS	:= -T core.ld -nostdlib -mno-red-zone
+	-fpic -mgeneral-regs-only -mno-red-zone
+LDFLAGS	:= -T core.ld -nostdlib -pie -mno-red-zone
 LDLIBS	:= -lgcc
 
 # Objects
