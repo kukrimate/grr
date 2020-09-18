@@ -2,13 +2,6 @@
  * Assembly helpers
  */
 
-/* Call MS ABI functions */
-.macro mscall func
-sub $0x20, %rsp
-call \func
-add $0x20, %rsp
-.endm
-
 .section .text
 
 /* AP guest SIPI catcher */
@@ -16,7 +9,7 @@ add $0x20, %rsp
 ap_guest_entry:
 	movl 0xfee00020, %eax
 	shrl $24, %eax
-1: 	cmpb sipi_core, %al
+1: 	cmpb sipi_core(%rip), %al
 	jne 1b
 	vmmcall
 1:	jmp 1b
@@ -70,6 +63,6 @@ vmm_execute:
 
 	/* Call high level #VMEXIT handler */
 	movq %rax, %rdi
-	mscall vmexit_handler
+	call vmexit_handler
 
 	jmp .execute_loop

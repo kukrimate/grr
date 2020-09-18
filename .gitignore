@@ -1,6 +1,7 @@
 # Binaries
 *.o
 *.efi
+*.elf
 # Testing
 test
 toolchain

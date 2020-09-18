@@ -2,13 +2,6 @@
  * Kernel stack init
  */
 
-/* Call MS ABI functions */
-.macro mscall func
-sub $0x20, %rsp
-call \func
-add $0x20, %rsp
-.endm
-
 .section .bss
 
 /*
@@ -27,10 +20,10 @@ kernel_bsp_stack_top:
 kernel_init:
 
 /* Setup stack */
-movq $kernel_bsp_stack_top, %rsp
+leaq kernel_bsp_stack_top(%rip), %rsp
 
 /* Call C code */
-mscall kernel_main
+call kernel_main
 
 /* This should never be reached */
 1: hlt
