@@ -1,3 +1,5 @@
 # Binaries
 *.o
 *.efi
+# Testing
+test

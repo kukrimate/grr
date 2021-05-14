@@ -46,6 +46,19 @@ efiapi
 efi_main(efi_handle image_handle, efi_system_table *system_table)
 {
 	efi_status status;
+	efi_loaded_image_protocol *loaded_image;
+
+	/* Make sure we are loaded under 4GiB */
+	status = system_table->boot_services->handle_protocol(image_handle,
+		&(efi_guid) EFI_LOADED_IMAGE_PROTOCOL_GUID, (void **) &loaded_image);
+	if (EFI_ERROR(status))
+		return status;
+	if ((efi_u64) loaded_image->image_base
+			+ loaded_image->image_size > 0x10000000) {
+		system_table->con_out->output_string(system_table->con_out,
+			L"Must be loaded under 4GiB!\r\n");
+		return EFI_UNSUPPORTED;
+	}
 
 	/* Allocate handover block */
 	status = system_table->boot_services->allocate_pages(

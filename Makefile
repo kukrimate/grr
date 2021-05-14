@@ -1,9 +1,14 @@
+ARCH   := x86_64
 LIBEFI := libefi
-include libefi/tools/Makefile.efi
+include libefi/tools/Makefile-$(ARCH).efi
 
-CFLAGS += -Isrc -Wall -mgeneral-regs-only \
+CFLAGS += -Isrc -Wall \
 	-Wno-missing-braces -Wno-unused-function \
 	-Wno-unused-variable -Wno-unused-but-set-variable
+
+# NOTE: link to 1MiB, we must be loaded under 4GiB otherwise the 32-bit SMP
+# init code breaks
+LDFLAGS += -Wl,--image-base,0x100000
 
 SUBSYSTEM := 12
 
@@ -23,7 +28,7 @@ OBJ := src/efi/main.o \
 all: $(APP)
 
 $(APP): $(OBJ)
-	$(LD) $(LDFLAGS) $^ -o $@ $(LIBS)
+	$(CC) $(LDFLAGS) $^ -o $@ $(LIBS)
 
 clean:
 	rm -f $(APP) $(OBJ)
