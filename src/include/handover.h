@@ -50,6 +50,8 @@ struct grr_handover {
 	u64 r13;	/* Offset: 0x280 */
 	u64 r14;	/* Offset: 0x288 */
 	u64 r15;	/* Offset: 0x290 */
-} __attribute__((packed));
+};
+
+_Static_assert(offsetof (struct grr_handover, rip) == 0x210);
 
 #endif
