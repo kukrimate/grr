@@ -24,8 +24,8 @@ enum {
 	UART_SCR = 7,	/* Scratch register (R/W) */
 };
 
-void
-uart_setup(void)
+#if 1
+void uart_setup(void)
 {
 	uint16_t divisor;
 	const char *p;
@@ -48,8 +48,7 @@ uart_setup(void)
 #endif
 }
 
-void
-uart_write(uint8_t data)
+void uart_write(uint8_t data)
 {
 	/* Wait for THR to be empty */
 	while (!(inb(UART_ADDR + UART_LSR) & (1 << 5)));
@@ -57,14 +56,21 @@ uart_write(uint8_t data)
 	outb(UART_ADDR + UART_BUF, data);
 }
 
-uint8_t
-uart_read(void)
+uint8_t uart_read(void)
 {
 	/* Wait for data avaiable to be set */
 	while (!(inb(UART_ADDR + UART_LSR) & 1));
 	/* Read data */
 	return inb(UART_ADDR + UART_BUF);
 }
+
+#else
+
+void uart_setup(void) {}
+void uart_write(uint8_t data) {}
+uint8_t uart_read(void)
+
+#endif
 
 static
 const char *digits = "0123456789abcdef";

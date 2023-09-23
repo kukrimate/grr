@@ -68,7 +68,7 @@ typedef struct {
 /*
  * Local APIC address
  */
-extern void *lapic_addr;
+extern uint64_t lapic_addr;
 
 void
 acpi_smp_init(acpi_rsdp *rsdp);
